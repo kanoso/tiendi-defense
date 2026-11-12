@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import type { SoundEvent } from './soundEvents';
+import { nextVolume, parseVolume } from './volume';
 
 /** Sounds the interface makes by itself, on top of what happens in the game. */
 export type InterfaceSound = 'select' | 'menu' | 'refused';
@@ -34,22 +35,42 @@ const SOUNDS: Record<SoundName, SoundSpec> = {
   refused: { file: 'refused', volume: 0.4, minGapMs: 200 },
 };
 
-const MUTED_KEY = 'tower-defense-heroes.muted';
+const VOLUME_KEY = 'tower-defense-heroes.volume';
+/** The on/off setting from before the game had volume levels. Only read, never written. */
+const LEGACY_MUTED_KEY = 'tower-defense-heroes.muted';
 
-/** Call from the scene's `preload`. */
-export function loadSounds(scene: Phaser.Scene): void {
+/**
+ * Starts loading the sounds without making the game wait for them. Call from
+ * the scene's `create`, never from `preload`: a scene does not start until
+ * everything queued in `preload` has loaded, and audio can stall for good on
+ * browsers that block or lack it.
+ */
+export function loadSoundsInBackground(scene: Phaser.Scene): void {
+  let queued = false;
   for (const spec of Object.values(SOUNDS)) {
-    scene.load.audio(spec.file, `assets/audio/${spec.file}.ogg`);
+    // Already there after a restart or a second visit to the scene.
+    if (scene.cache.audio.exists(spec.file)) continue;
+    // Each sound comes in two formats and the browser takes the first it can
+    // play: Ogg almost everywhere, AAC for Safari and the iPhone.
+    const base = `assets/audio/${spec.file}`;
+    scene.load.audio(spec.file, [`${base}.ogg`, `${base}.m4a`]);
+    queued = true;
   }
+  if (queued) scene.load.start();
 }
 
-/** Plays the game's sounds, and remembers whether the player muted them. */
+/** Plays the game's sounds at the volume the player chose, and remembers it. */
 export class SoundPlayer {
-  muted: boolean;
+  /** From 0 (silent) to 1 (full). */
+  volume: number;
   private lastPlayedAt = new Map<SoundName, number>();
 
   constructor(private scene: Phaser.Scene) {
-    this.muted = readMuted();
+    this.volume = readVolume();
+  }
+
+  get muted(): boolean {
+    return this.volume === 0;
   }
 
   play(name: SoundName): void {
@@ -59,26 +80,27 @@ export class SoundPlayer {
     const last = this.lastPlayedAt.get(name);
     if (last !== undefined && now - last < spec.minGapMs) return;
     this.lastPlayedAt.set(name, now);
-    // A browser without this audio format simply stays quiet.
+    // A browser that could load neither format simply stays quiet.
     if (this.scene.cache.audio.exists(spec.file)) {
-      this.scene.sound.play(spec.file, { volume: spec.volume });
+      this.scene.sound.play(spec.file, { volume: spec.volume * this.volume });
     }
   }
 
-  toggleMuted(): void {
-    this.muted = !this.muted;
+  /** Moves to the next volume step: quieter each time, then back to full. */
+  cycleVolume(): void {
+    this.volume = nextVolume(this.volume);
     try {
-      localStorage.setItem(MUTED_KEY, this.muted ? '1' : '0');
+      localStorage.setItem(VOLUME_KEY, String(this.volume));
     } catch {
       // Storage may be unavailable; the choice then lasts only for this visit.
     }
   }
 }
 
-function readMuted(): boolean {
+function readVolume(): number {
   try {
-    return localStorage.getItem(MUTED_KEY) === '1';
+    return parseVolume(localStorage.getItem(VOLUME_KEY), localStorage.getItem(LEGACY_MUTED_KEY));
   } catch {
-    return false;
+    return 1;
   }
 }

@@ -10,7 +10,7 @@ Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11
 | 1 — MVP jugable | Hecha | Probada por el autor. Falta la prueba con una persona que no conozca el juego. |
 | 2 — Profundidad | Hecha, salvo la música | Ver "Diferencias con lo planeado". |
 | 3 — Progresión | Hecha | 3 mapas (uno con doble entrada), selector de mapas, estrellas, 3 dificultades, rangos permanentes de héroes y guardado en el navegador. |
-| 4 — Pulido y publicación | En curso | Hecho: publicado en https://kanoso.github.io/tiendi-defense/ con despliegue automático desde la rama `main`. Hecho también: controles táctiles (todo lo que hace una tecla tiene un botón en pantalla) y aviso para girar el teléfono. Hechos además: pantalla completa y modo sin fin con puntuación y récord por mapa y dificultad. Faltan: opciones de volumen, rendimiento, audio compatible con iPhone. |
+| 4 — Pulido y publicación | Hecha | Hecho: publicado en https://kanoso.github.io/tiendi-defense/ con despliegue automático desde la rama `main`. Hecho también: controles táctiles (todo lo que hace una tecla tiene un botón en pantalla) y aviso para girar el teléfono. Hechos además: pantalla completa y modo sin fin con puntuación y récord por mapa y dificultad. También: volumen en cuatro niveles, audio en dos formatos (Ogg y AAC, este último para Safari y iPhone), sonidos cargados en segundo plano para que el juego arranque aunque el audio falle, y una revisión de rendimiento (con más de 100 enemigos, la lógica usa el 0,1 % de un cuadro y el dibujo 0,3 ms). Sin verificar en un iPhone real. |
 | 5 — Cooperativo en línea | Pendiente | |
 
 **Diferencias con lo planeado en la fase 2**

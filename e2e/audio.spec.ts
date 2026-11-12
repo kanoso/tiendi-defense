@@ -5,13 +5,16 @@ import { clickSlot, openGame } from './game';
 
 // The tests cannot hear, so they check what the game asked its audio to do.
 
-function audioState(page: Page): Promise<{ loaded: string[]; played: string[]; muted: boolean }> {
+function audioState(
+  page: Page,
+): Promise<{ loaded: string[]; played: string[]; muted: boolean; volume: number }> {
   return page.evaluate(() => {
     const scene: any = (window as any).__game.scene.getScene('game');
     return {
       loaded: scene.cache.audio.getKeys(),
       played: [...scene.sounds.lastPlayedAt.keys()],
       muted: scene.sounds.muted,
+      volume: scene.sounds.volume,
     };
   });
 }
@@ -20,7 +23,9 @@ test.beforeEach(async ({ page }) => {
   await openGame(page);
 });
 
-test('every sound file loads', async ({ page }) => {
+test('every sound file loads, without holding the game back', async ({ page }) => {
+  // The game is already on screen; the sounds arrive on their own.
+  await expect.poll(async () => (await audioState(page)).loaded.length).toBe(16);
   const { loaded } = await audioState(page);
   expect(loaded.sort()).toEqual(
     [
@@ -60,14 +65,47 @@ test('what the player does and what happens in the game make their sounds', asyn
   await expect.poll(async () => (await audioState(page)).played, { timeout: 20_000 }).toContain('shot');
 });
 
-test('the M key mutes the game and the choice is remembered', async ({ page }) => {
-  await page.keyboard.press('m');
-  await expect.poll(async () => (await audioState(page)).muted).toBe(true);
+test('the M key lowers the volume step by step down to silence, then back to full', async ({
+  page,
+}) => {
+  expect((await audioState(page)).volume).toBe(1);
+  const heard: number[] = [];
+  for (let press = 0; press < 4; press++) {
+    await page.keyboard.press('m');
+    await page.waitForTimeout(100);
+    heard.push((await audioState(page)).volume);
+  }
+  expect(heard).toEqual([0.6, 0.3, 0, 1]);
+});
 
+test('the chosen volume is remembered on the next visit', async ({ page }) => {
+  await page.keyboard.press('m');
+  await expect.poll(async () => (await audioState(page)).volume).toBe(0.6);
+
+  await openGame(page);
+  expect((await audioState(page)).volume).toBe(0.6);
+});
+
+test('a muted game makes no sound', async ({ page }) => {
+  // One press at a time: three steps down from full volume is silence.
+  for (const expected of [0.6, 0.3, 0]) {
+    await page.keyboard.press('m');
+    await expect.poll(async () => (await audioState(page)).volume).toBe(expected);
+  }
+  expect((await audioState(page)).muted).toBe(true);
+  // Forget what played on the way down, then do something that normally sounds.
+  await page.evaluate(() =>
+    (window as any).__game.scene.getScene('game').sounds.lastPlayedAt.clear(),
+  );
   await page.keyboard.press('2');
   await page.waitForTimeout(200);
-  expect((await audioState(page)).played).not.toContain('select');
+  expect((await audioState(page)).played).toEqual([]);
+});
 
+test('a player who had muted the game before volume levels existed stays muted', async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem('tower-defense-heroes.muted', '1'));
   await openGame(page);
   expect((await audioState(page)).muted).toBe(true);
 });

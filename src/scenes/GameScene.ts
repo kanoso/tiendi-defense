@@ -40,13 +40,15 @@ import { endlessBest, recordEndless, recordVictory, starsFor } from '../progress
 import { loadProgress, saveProgress } from '../progress/storage';
 import { applyHeroRanks } from '../progress/upgrades';
 import { listen, soundEventsSince, type Heard } from '../ui/soundEvents';
-import { loadSounds, SoundPlayer } from '../ui/SoundPlayer';
+import { loadSoundsInBackground, SoundPlayer } from '../ui/SoundPlayer';
+import { setColorIfChanged } from '../ui/text';
 import { Tutorial } from '../ui/tutorial';
+import { volumeLabel } from '../ui/volume';
 
 const HERO_KEYS = ['ONE', 'TWO', 'THREE', 'FOUR'];
 
 const KEY_SUMMARY =
-  '1-4: héroe · clic: mover · Q y W: habilidades · clic en +: torre · F: velocidad · P: pausa · M: sonido';
+  '1-4: héroe · clic: mover · Q y W: habilidades · clic en +: torre · F: velocidad · P: pausa · M: volumen';
 
 const TOUCH_SUMMARY =
   'Toca un héroe o su tarjeta para elegirlo y el mapa para moverlo. Sus habilidades están en la tarjeta. Toca un + para construir.';
@@ -173,11 +175,13 @@ export class GameScene extends Phaser.Scene {
 
   preload(): void {
     loadSprites(this);
-    loadSounds(this);
   }
 
   create(): void {
     keepSpritesCrisp(this);
+    // Sounds load in the background: the game must start even where audio is
+    // slow, blocked or missing. Each sound simply stays quiet until it arrives.
+    loadSoundsInBackground(this);
     // The scene instance is reused on restart, so every field starts over here.
     this.game_ = createGame(this.level, Date.now());
     this.stepper = createFixedStepper(STEP_MS);
@@ -290,8 +294,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private toggleSound(): void {
-    this.sounds.toggleMuted();
-    this.showNotice(this.sounds.muted ? 'Sonido desactivado' : 'Sonido activado');
+    this.sounds.cycleVolume();
+    const percent = Math.round(this.sounds.volume * 100);
+    this.showNotice(this.sounds.muted ? 'Sonido desactivado' : `Volumen: ${percent} %`);
+    // A sample at the new level, so the player hears what they chose.
+    this.sounds.play('select');
   }
 
   private skipTutorial(): void {
@@ -756,11 +763,12 @@ export class GameScene extends Phaser.Scene {
 
     const lesson = this.tutorial.text;
     const controls = this.usingTouch ? TOUCH_SUMMARY : KEY_SUMMARY;
-    this.hint.setText(lesson ?? controls).setColor(lesson ? '#ffe066' : '#ffffff');
+    this.hint.setText(lesson ?? controls);
+    setColorIfChanged(this.hint, lesson ? '#ffe066' : '#ffffff');
 
     this.controls.wave.setVisible(game.phase === 'preparing');
     this.controls.speed.setText(`x${this.speed}`);
-    this.controls.sound.setText(this.sounds.muted ? 'Mudo' : 'Sonido');
+    this.controls.sound.setText(volumeLabel(this.sounds.volume));
     this.fullscreenButton?.setText(this.scale.isFullscreen ? 'Ventana' : 'Completa');
     this.controls.pause.setVisible(!over);
     this.controls.skip.setVisible(lesson !== null);

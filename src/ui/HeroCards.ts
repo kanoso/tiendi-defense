@@ -10,6 +10,7 @@ import {
 } from '../core/simulation';
 import type { Aim } from '../entities/overlay';
 import { ABILITY_KEYS, FONT, HERO_STYLE, SELECTION_COLOR } from '../entities/styles';
+import { setColorIfChanged } from './text';
 
 export const HERO_CARD_HEIGHT = 56;
 
@@ -113,9 +114,8 @@ export class HeroCards {
       card.abilityButtons.forEach((button, index) => {
         const ready = canUseAbility(game, this.level, hero, index);
         const aiming = aim?.heroId === hero.id && aim.ability === index;
-        button.text
-          .setText(`${ABILITY_KEYS[index]} ${this.abilityStatus(hero, index, aiming)}`)
-          .setColor(ready ? '#ffe066' : '#a9b3a0');
+        button.text.setText(`${ABILITY_KEYS[index]} ${this.abilityStatus(hero, index, aiming)}`);
+        setColorIfChanged(button.text, ready ? '#ffe066' : '#a9b3a0');
         button.frame.setStrokeStyle(aiming ? 2 : 1, ready ? SELECTION_COLOR : DIM_BORDER);
       });
 

@@ -45,5 +45,9 @@ licencia CC0:
 | `menu.ogg` | `open_001.ogg` | Interface Sounds |
 | `refused.ogg` | `error_004.ogg` | Interface Sounds |
 
+Cada sonido está además en `.m4a` (AAC), convertido desde el `.ogg` con ffmpeg,
+para los navegadores que no reproducen Ogg. Al cambiar un sonido hay que
+reemplazar los dos archivos.
+
 Para cambiar un sonido basta con reemplazar el archivo, o editar el volumen y la
 frecuencia en `src/ui/SoundPlayer.ts`.

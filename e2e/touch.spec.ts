@@ -69,8 +69,8 @@ function isShowing(page: Page, scene: 'menu' | 'game'): Promise<boolean> {
   return page.evaluate((key) => Boolean((window as any).__game?.scene.isActive(key)), scene);
 }
 
-function isMuted(page: Page): Promise<boolean> {
-  return page.evaluate(() => (window as any).__game.scene.getScene('game').sounds.muted);
+function volume(page: Page): Promise<number> {
+  return page.evaluate(() => (window as any).__game.scene.getScene('game').sounds.volume);
 }
 
 async function startWave(page: Page): Promise<void> {
@@ -154,7 +154,7 @@ test('the speed and sound buttons do what their keys do', async ({ page }) => {
   await expect.poll(async () => (await snapshot(page)).speed).toBe(2);
 
   await tap(page, await control(page, 'sound'));
-  await expect.poll(() => isMuted(page)).toBe(true);
+  await expect.poll(() => volume(page)).toBeLessThan(1);
 });
 
 test('the tutorial can be skipped with its button, leaving touch instructions', async ({

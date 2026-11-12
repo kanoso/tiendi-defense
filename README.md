@@ -41,8 +41,9 @@ npm run dev
 |---|---|
 | `npm run dev` | Abre el juego en el navegador con recarga automática |
 | `npm test` | Pruebas de la lógica |
-| `npm run e2e` | Pruebas en un navegador real |
-| `npm run balance` | Simula partidas con jugadores automáticos y muestra hasta dónde llegan |
+| `npm run e2e` | Pruebas en un navegador real (Chromium) |
+| `npm run e2e:webkit` | Las mismas pruebas en WebKit, el motor de Safari. En Windows falla la de carga de sonidos, porque esa versión de WebKit no trae audio |
+| `npm run balance` | Simula partidas con jugadores automáticos: hasta dónde llegan y cuánto cuesta cada tick |
 | `npm run build` | Genera la versión para publicar en `dist/` |
 
 Cada cambio en la rama `main` se publica solo en GitHub Pages, siempre que las
