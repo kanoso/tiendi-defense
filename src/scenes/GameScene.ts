@@ -131,6 +131,8 @@ export class GameScene extends Phaser.Scene {
    * Decides which instructions to show; guessing from the device is unreliable.
    */
   private usingTouch = false;
+  /** Missing where the browser cannot go full screen. */
+  private fullscreenButton: Phaser.GameObjects.Text | null = null;
   /** Title of the pause and of the end of the game. */
   private bigTitle!: Phaser.GameObjects.Text;
   /** Every button on screen, by what it does. Also read by the browser tests. */
@@ -609,8 +611,14 @@ export class GameScene extends Phaser.Scene {
     // Top right, from the edge inwards. Everything a key does has a button here
     // or on the hero cards, so the game can be played by touch alone.
     let right = width - 16;
-    const topButton = (label: string, buttonWidth: number, onClick: () => void, primary = false) => {
-      const button = this.button(right, 12, label, onClick, { width: buttonWidth, primary });
+    const topButton = (
+      label: string,
+      buttonWidth: number,
+      onClick: () => void,
+      primary = false,
+      on: 'pointerdown' | 'pointerup' = 'pointerdown',
+    ) => {
+      const button = this.button(right, 12, label, onClick, { width: buttonWidth, primary, on });
       button.setOrigin(1, 0);
       right -= buttonWidth + 6;
       return button;
@@ -618,6 +626,10 @@ export class GameScene extends Phaser.Scene {
     const sound = topButton('', 76, () => this.toggleSound());
     const pause = topButton('Pausa', 70, () => this.togglePause());
     const speed = topButton('', 48, () => this.toggleSpeed());
+    // Some browsers, the iPhone's among them, do not let a page go full screen.
+    this.fullscreenButton = this.scale.fullscreen.available
+      ? topButton('', 84, () => this.scale.toggleFullscreen(), false, 'pointerup')
+      : null;
     const wave = topButton('Iniciar oleada', 132, () => this.issue({ type: 'startWave' }), true);
 
     this.add
@@ -688,7 +700,7 @@ export class GameScene extends Phaser.Scene {
     y: number,
     label: string,
     onClick: () => void,
-    options: { width: number; primary?: boolean },
+    options: { width: number; primary?: boolean; on?: 'pointerdown' | 'pointerup' },
   ): Phaser.GameObjects.Text {
     return this.add
       .text(x, y, label, {
@@ -703,7 +715,8 @@ export class GameScene extends Phaser.Scene {
       })
       .setDepth(10)
       .setInteractive({ useHandCursor: true })
-      .on('pointerdown', onClick);
+      // Browsers only allow going full screen from the release of a press.
+      .on(options.on ?? 'pointerdown', onClick);
   }
 
   private syncInterface(): void {
@@ -719,6 +732,7 @@ export class GameScene extends Phaser.Scene {
     this.controls.wave.setVisible(game.phase === 'preparing');
     this.controls.speed.setText(`x${this.speed}`);
     this.controls.sound.setText(this.sounds.muted ? 'Mudo' : 'Sonido');
+    this.fullscreenButton?.setText(this.scale.isFullscreen ? 'Ventana' : 'Completa');
     this.controls.pause.setVisible(!over);
     this.controls.skip.setVisible(lesson !== null);
 

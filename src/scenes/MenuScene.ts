@@ -84,6 +84,8 @@ export class MenuScene extends Phaser.Scene {
   heroTiles: HeroTile[] = [];
   difficulty: DifficultyId = 'normal';
   available = 0;
+  /** Where the full screen button is, when the browser allows one. */
+  fullscreenButton: { x: number; y: number } | null = null;
 
   constructor() {
     super('menu');
@@ -113,6 +115,8 @@ export class MenuScene extends Phaser.Scene {
     this.available = availableStars(progress);
 
     this.heading(GAME_WIDTH / 2, 44, 'Tower Defense Heroes', 38);
+    this.fullscreenButton = null;
+    this.drawFullscreenButton();
     this.drawDifficulties();
     this.drawMaps(progress);
     this.heading(
@@ -127,6 +131,25 @@ export class MenuScene extends Phaser.Scene {
     MAP_KEYS.forEach((key, index) => {
       keyboard?.on(`keydown-${key}`, () => this.openMap(this.cards[index]));
     });
+  }
+
+  /** Left out where the browser cannot go full screen, as on an iPhone. */
+  private drawFullscreenButton(): void {
+    if (!this.scale.fullscreen.available) return;
+    const x = GAME_WIDTH - 16 - 85;
+    const frame = this.panel(x, 30, 170, 32, false).setInteractive({ useHandCursor: true });
+    const text = this.label(x, 30, '', 15, '#f4f1e8', true);
+    const refresh = () => text.setText(this.scale.isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa');
+    refresh();
+    // Browsers only allow going full screen from the release of a press.
+    frame.on('pointerup', () => this.scale.toggleFullscreen());
+    this.scale.on('enterfullscreen', refresh);
+    this.scale.on('leavefullscreen', refresh);
+    this.events.once('shutdown', () => {
+      this.scale.off('enterfullscreen', refresh);
+      this.scale.off('leavefullscreen', refresh);
+    });
+    this.fullscreenButton = { x, y: 30 };
   }
 
   // --- difficulty ----------------------------------------------------------
