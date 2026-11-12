@@ -13,18 +13,18 @@ export interface TutorialStep {
 }
 
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
-  { text: 'Elige un héroe con las teclas 1 a 4 o con un clic sobre él.', awaits: 'heroSelected' },
+  { text: 'Elige un héroe: toca su tarjeta de abajo o pulsa una tecla del 1 al 4.', awaits: 'heroSelected' },
   {
-    text: 'Haz clic en el mapa para moverlo. Los héroes no atacan mientras caminan.',
+    text: 'Toca un punto del mapa para moverlo. Los héroes no atacan mientras caminan.',
     awaits: 'heroMoved',
   },
   {
-    text: 'Haz clic en un círculo con + y construye una torre con tu oro.',
+    text: 'Toca un círculo con + y construye una torre con tu oro.',
     awaits: 'towerBuilt',
   },
-  { text: 'Pulsa Espacio para iniciar la oleada.', awaits: 'waveStarted' },
+  { text: 'Inicia la oleada con el botón amarillo o con la barra espaciadora.', awaits: 'waveStarted' },
   {
-    text: 'Que nadie llegue a la salida. Al subir de nivel, los héroes desbloquean habilidades (Q y W).',
+    text: 'Que nadie llegue a la salida. Al subir de nivel, los héroes desbloquean las habilidades de su tarjeta.',
     awaits: 'waveCleared',
   },
 ];

@@ -10,7 +10,7 @@ const ROAD_EDGE_COLOR = 0x8a5a33;
 
 /** Room kept clear at the top and bottom for the status bar and the hero cards. */
 const INTERFACE_TOP = 78;
-const INTERFACE_BOTTOM = 70;
+const INTERFACE_BOTTOM = 84;
 
 /** What grows on the grass, and how often. Trees are drawn larger. */
 const DECORATIONS: readonly { sprite: SpriteName; weight: number; scale: number }[] = [

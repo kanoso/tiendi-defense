@@ -10,7 +10,7 @@ Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11
 | 1 — MVP jugable | Hecha | Probada por el autor. Falta la prueba con una persona que no conozca el juego. |
 | 2 — Profundidad | Hecha, salvo la música | Ver "Diferencias con lo planeado". |
 | 3 — Progresión | Hecha | 3 mapas (uno con doble entrada), selector de mapas, estrellas, 3 dificultades, rangos permanentes de héroes y guardado en el navegador. |
-| 4 — Pulido y publicación | En curso | Hecho: publicado en https://kanoso.github.io/tiendi-defense/ con despliegue automático desde la rama `main`. Faltan: controles táctiles y móvil, modo sin fin, opciones de volumen, rendimiento. |
+| 4 — Pulido y publicación | En curso | Hecho: publicado en https://kanoso.github.io/tiendi-defense/ con despliegue automático desde la rama `main`. Hecho también: controles táctiles (todo lo que hace una tecla tiene un botón en pantalla) y aviso para girar el teléfono. Faltan: modo sin fin, opciones de volumen, rendimiento, audio compatible con iPhone. |
 | 5 — Cooperativo en línea | Pendiente | |
 
 **Diferencias con lo planeado en la fase 2**

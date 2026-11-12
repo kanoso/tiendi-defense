@@ -63,7 +63,7 @@ export function snapshot(page: Page): Promise<Snapshot> {
       selectedHeroId: scene.selectedHeroId,
       targetingHeroId: scene.aim ? scene.aim.heroId : null,
       menu: scene.towerMenu.entries.map((entry: any) => entry.text.text),
-      endTitle: scene.endTitle.visible ? scene.endTitle.text : null,
+      endTitle: game.phase === 'won' || game.phase === 'lost' ? scene.bigTitle.text : null,
       notice: scene.notice.alpha > 0 ? scene.notice.text : null,
       hint: scene.hint.text,
       tick: game.tick,

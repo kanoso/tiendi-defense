@@ -46,8 +46,11 @@ const HERO_KEYS = ['ONE', 'TWO', 'THREE', 'FOUR'];
 const KEY_SUMMARY =
   '1-4: héroe · clic: mover · Q y W: habilidades · clic en +: torre · F: velocidad · P: pausa · M: sonido';
 
-/** Room the speed button takes at the top right, so the wave button sits beside it. */
-const SPEED_BUTTON_WIDTH = 160;
+const TOUCH_SUMMARY =
+  'Toca un héroe o su tarjeta para elegirlo y el mapa para moverlo. Sus habilidades están en la tarjeta. Toca un + para construir.';
+
+/** Extra distance around a hero or a build slot that still counts as touching it. */
+const TAP_MARGIN = 10;
 
 const TUTORIAL_SEEN_KEY = 'tower-defense-heroes.tutorial-seen';
 
@@ -116,9 +119,6 @@ export class GameScene extends Phaser.Scene {
   private heroCards!: HeroCards;
   private towerMenu!: TowerMenu;
   private hud!: Phaser.GameObjects.Text;
-  private waveButton!: Phaser.GameObjects.Text;
-  private endTitle!: Phaser.GameObjects.Text;
-  private endHint!: Phaser.GameObjects.Text;
   private notice!: Phaser.GameObjects.Text;
   /** Last level seen for each hero, to notice when one goes up. */
   private knownLevels = new Map<number, number>();
@@ -126,8 +126,18 @@ export class GameScene extends Phaser.Scene {
   /** How many simulation seconds pass per real second. */
   private speed = 1;
   private paused = false;
-  private speedButton!: Phaser.GameObjects.Text;
-  private pauseTitle!: Phaser.GameObjects.Text;
+  /**
+   * Whether the player's last input was a finger rather than a key or a mouse.
+   * Decides which instructions to show; guessing from the device is unreliable.
+   */
+  private usingTouch = false;
+  /** Title of the pause and of the end of the game. */
+  private bigTitle!: Phaser.GameObjects.Text;
+  /** Every button on screen, by what it does. Also read by the browser tests. */
+  private controls!: Record<
+    'wave' | 'speed' | 'pause' | 'sound' | 'skip' | 'resume' | 'pauseMenu' | 'retry' | 'endMenu',
+    Phaser.GameObjects.Text
+  >;
 
   private tutorial!: Tutorial;
   private hint!: Phaser.GameObjects.Text;
@@ -221,28 +231,21 @@ export class GameScene extends Phaser.Scene {
     this.input.on(
       'pointerdown',
       (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
-        if (isOver(this.game_)) {
-          this.scene.restart();
-          return;
-        }
+        this.usingTouch = pointer.wasTouch;
         if (over.length > 0) return; // An interface element handled the click.
+        if (isOver(this.game_)) return; // Only the buttons on screen do anything now.
         this.handleMapClick(pointer.worldX, pointer.worldY);
       },
     );
 
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
+    keyboard.on('keydown', () => (this.usingTouch = false));
     keyboard.on('keydown-SPACE', () => this.issue({ type: 'startWave' }));
     keyboard.on('keydown-F', () => this.toggleSpeed());
     keyboard.on('keydown-P', () => this.togglePause());
-    keyboard.on('keydown-M', () => {
-      this.sounds.toggleMuted();
-      this.showNotice(this.sounds.muted ? 'Sonido desactivado' : 'Sonido activado');
-    });
-    keyboard.on('keydown-T', () => {
-      this.tutorial.skip();
-      rememberTutorialSeen();
-    });
+    keyboard.on('keydown-M', () => this.toggleSound());
+    keyboard.on('keydown-T', () => this.skipTutorial());
     HERO_KEYS.forEach((key, index) => {
       keyboard.on(`keydown-${key}`, () => this.selectHero(index + 1));
     });
@@ -255,7 +258,7 @@ export class GameScene extends Phaser.Scene {
     });
     // Back to the map picker: after the game ends, or from the pause screen.
     keyboard.on('keydown-ENTER', () => {
-      if (isOver(this.game_) || this.paused) this.scene.start('menu');
+      if (isOver(this.game_) || this.paused) this.goToMenu();
     });
     keyboard.on('keydown-R', () => {
       if (isOver(this.game_)) this.scene.restart();
@@ -273,6 +276,30 @@ export class GameScene extends Phaser.Scene {
     }
     this.pendingCommands.push(command);
     if (command.type === 'moveHero') this.tutorial.handle('heroMoved');
+  }
+
+  private toggleSound(): void {
+    this.sounds.toggleMuted();
+    this.showNotice(this.sounds.muted ? 'Sonido desactivado' : 'Sonido activado');
+  }
+
+  private skipTutorial(): void {
+    this.tutorial.skip();
+    rememberTutorialSeen();
+  }
+
+  private goToMenu(): void {
+    this.scene.start('menu');
+  }
+
+  /**
+   * An ability button on a hero card: selects that hero and uses the ability.
+   * Tapping the button of an ability being aimed cancels the aim instead.
+   */
+  private tapAbility(heroId: number, ability: number): void {
+    const wasAiming = this.aim?.heroId === heroId && this.aim.ability === ability;
+    this.selectHero(heroId);
+    if (!wasAiming) this.useSelectedAbility(ability);
   }
 
   private toggleSpeed(): void {
@@ -324,7 +351,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     const slot = this.level.buildSlots.findIndex(
-      (point) => Math.hypot(point.x - x, point.y - y) <= SLOT_RADIUS + 4,
+      (point) => Math.hypot(point.x - x, point.y - y) <= SLOT_RADIUS + TAP_MARGIN,
     );
     if (slot !== -1) {
       this.towerMenu.open(this.game_, slot);
@@ -332,7 +359,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     const clicked = this.game_.heroes.find(
-      (hero) => Math.hypot(hero.x - x, hero.y - y) <= HERO_RADIUS + 6,
+      (hero) => Math.hypot(hero.x - x, hero.y - y) <= HERO_RADIUS + TAP_MARGIN,
     );
     if (clicked) {
       this.selectHero(clicked.id);
@@ -566,7 +593,7 @@ export class GameScene extends Phaser.Scene {
       })
       .setDepth(10);
 
-    // Shows the tutorial step during a first game, and the key summary afterwards.
+    // Shows the tutorial step during a first game, and the controls afterwards.
     this.hint = this.add
       .text(16, 44, '', {
         fontFamily: FONT,
@@ -575,52 +602,45 @@ export class GameScene extends Phaser.Scene {
         color: '#ffffff',
         stroke: '#1b1f17',
         strokeThickness: 3,
-        wordWrap: { width: 600 },
+        wordWrap: { width: 500 },
       })
       .setDepth(10);
 
-    this.speedButton = this.add
-      .text(width - 16, 12, '', {
-        fontFamily: FONT,
-        fontSize: '16px',
-        color: '#f4f1e8',
-        backgroundColor: '#22281d',
-        padding: { x: 12, y: 7 },
-      })
-      .setOrigin(1, 0)
-      .setDepth(10)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.toggleSpeed());
+    // Top right, from the edge inwards. Everything a key does has a button here
+    // or on the hero cards, so the game can be played by touch alone.
+    let right = width - 16;
+    const topButton = (label: string, buttonWidth: number, onClick: () => void, primary = false) => {
+      const button = this.button(right, 12, label, onClick, { width: buttonWidth, primary });
+      button.setOrigin(1, 0);
+      right -= buttonWidth + 6;
+      return button;
+    };
+    const sound = topButton('', 76, () => this.toggleSound());
+    const pause = topButton('Pausa', 70, () => this.togglePause());
+    const speed = topButton('', 48, () => this.toggleSpeed());
+    const wave = topButton('Iniciar oleada', 132, () => this.issue({ type: 'startWave' }), true);
 
-    this.pauseTitle = this.add
-      .text(width / 2, height / 2 - 20, 'Pausa\nP: continuar · Enter: mapas', {
+    this.add
+      .text(width - 16, 50, `${this.map.name} · ${findDifficulty(this.difficulty).name}`, {
         fontFamily: FONT,
-        fontSize: '40px',
+        fontSize: '13px',
         fontStyle: 'bold',
         color: '#ffffff',
         stroke: '#1b1f17',
-        strokeThickness: 7,
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setDepth(20)
-      .setVisible(false);
-
-    this.waveButton = this.add
-      .text(width - 16 - SPEED_BUTTON_WIDTH, 12, 'Iniciar oleada (Espacio)', {
-        fontFamily: FONT,
-        fontSize: '16px',
-        color: '#1b1f17',
-        backgroundColor: '#ffe066',
-        padding: { x: 12, y: 7 },
+        strokeThickness: 3,
       })
       .setOrigin(1, 0)
-      .setDepth(10)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.issue({ type: 'startWave' }));
+      .setDepth(10);
+    const skip = this.button(width - 16, 72, 'Saltar tutorial', () => this.skipTutorial(), {
+      width: 124,
+    }).setOrigin(1, 0);
 
-    this.heroCards = new HeroCards(this, this.level, this.game_.heroes, (heroId) =>
-      this.selectHero(heroId),
+    this.heroCards = new HeroCards(
+      this,
+      this.level,
+      this.game_.heroes,
+      (heroId) => this.selectHero(heroId),
+      (heroId, ability) => this.tapAbility(heroId, ability),
     );
     this.towerMenu = new TowerMenu(this, this.level, (command) => this.issue(command));
 
@@ -637,54 +657,81 @@ export class GameScene extends Phaser.Scene {
       .setDepth(18)
       .setAlpha(0);
 
-    this.endTitle = this.add
-      .text(width / 2, height / 2 - 20, '', {
+    // One big title shared by the pause and the end of the game, with the two
+    // choices that make sense in each case right under it.
+    this.bigTitle = this.add
+      .text(width / 2, height / 2 - 44, '', {
         fontFamily: FONT,
-        fontSize: '64px',
+        fontSize: '60px',
         fontStyle: 'bold',
         color: '#ffffff',
         stroke: '#1b1f17',
         strokeThickness: 8,
       })
       .setOrigin(0.5)
-      .setDepth(20)
-      .setVisible(false);
+      .setDepth(20);
+    const choice = (offset: number, label: string, onClick: () => void, primary = false) =>
+      this.button(width / 2 + offset, height / 2 + 26, label, onClick, { width: 170, primary })
+        .setOrigin(0.5)
+        .setDepth(21);
+    const resume = choice(-92, 'Continuar', () => this.togglePause(), true);
+    const pauseMenu = choice(92, 'Elegir mapa', () => this.goToMenu());
+    const retry = choice(-92, 'Jugar de nuevo', () => this.scene.restart(), true);
+    const endMenu = choice(92, 'Elegir mapa', () => this.goToMenu());
 
-    this.endHint = this.add
-      .text(width / 2, height / 2 + 40, 'Clic o R: jugar de nuevo   ·   Enter: elegir mapa', {
+    this.controls = { wave, speed, pause, sound, skip, resume, pauseMenu, retry, endMenu };
+  }
+
+  /** A text button. `primary` marks the one the player most likely wants. */
+  private button(
+    x: number,
+    y: number,
+    label: string,
+    onClick: () => void,
+    options: { width: number; primary?: boolean },
+  ): Phaser.GameObjects.Text {
+    return this.add
+      .text(x, y, label, {
         fontFamily: FONT,
-        fontSize: '20px',
-        color: '#ffffff',
-        stroke: '#1b1f17',
-        strokeThickness: 5,
+        fontSize: '15px',
+        fontStyle: 'bold',
+        color: options.primary ? '#1b1f17' : '#f4f1e8',
+        backgroundColor: options.primary ? '#ffe066' : '#22281d',
+        padding: { x: 6, y: 8 },
+        fixedWidth: options.width,
+        align: 'center',
       })
-      .setOrigin(0.5)
-      .setDepth(20)
-      .setVisible(false);
+      .setDepth(10)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', onClick);
   }
 
   private syncInterface(): void {
     const game = this.game_;
+    const over = isOver(game);
     const wave = `${game.waveIndex + 1}/${this.level.waves.length}`;
-    const difficulty = findDifficulty(this.difficulty).name;
-    this.hud.setText(
-      `Vidas: ${game.lives}    Oro: ${game.gold}    Oleada: ${wave}    ${this.map.name} · ${difficulty}`,
-    );
-    this.waveButton.setVisible(game.phase === 'preparing');
-    this.speedButton.setText(`Velocidad x${this.speed} (F)`);
-    this.pauseTitle.setVisible(this.paused);
+    this.hud.setText(`Vidas: ${game.lives}    Oro: ${game.gold}    Oleada: ${wave}`);
 
     const lesson = this.tutorial.text;
-    this.hint
-      .setText(lesson ? `${lesson}   ·   T: saltar tutorial` : KEY_SUMMARY)
-      .setColor(lesson ? '#ffe066' : '#ffffff');
-    this.heroCards.sync(game, this.selectedHeroId, this.aim);
-    this.towerMenu.sync(game.gold);
+    const controls = this.usingTouch ? TOUCH_SUMMARY : KEY_SUMMARY;
+    this.hint.setText(lesson ?? controls).setColor(lesson ? '#ffe066' : '#ffffff');
 
-    const over = isOver(game);
+    this.controls.wave.setVisible(game.phase === 'preparing');
+    this.controls.speed.setText(`x${this.speed}`);
+    this.controls.sound.setText(this.sounds.muted ? 'Mudo' : 'Sonido');
+    this.controls.pause.setVisible(!over);
+    this.controls.skip.setVisible(lesson !== null);
+
     const stars = this.earnedStars ?? 0;
     const earned = '★'.repeat(stars) + '☆'.repeat(3 - stars);
-    this.endTitle.setVisible(over).setText(game.phase === 'won' ? `Victoria ${earned}` : 'Derrota');
-    this.endHint.setVisible(over);
+    const title = over ? (game.phase === 'won' ? `Victoria ${earned}` : 'Derrota') : 'Pausa';
+    this.bigTitle.setText(title).setVisible(over || this.paused);
+    this.controls.resume.setVisible(this.paused && !over);
+    this.controls.pauseMenu.setVisible(this.paused && !over);
+    this.controls.retry.setVisible(over);
+    this.controls.endMenu.setVisible(over);
+
+    this.heroCards.sync(game, this.selectedHeroId, this.aim);
+    this.towerMenu.sync(game.gold);
   }
 }

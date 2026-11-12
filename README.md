@@ -23,6 +23,9 @@ el jugador mueve a cuatro héroes por el mapa, cada uno con su rol y sus habilid
 | Pausa | `P` |
 | Silenciar | `M` |
 
+También se juega solo con toques: cada acción tiene un botón en pantalla, y las
+habilidades están en la tarjeta de cada héroe. En el teléfono, en horizontal.
+
 ## Desarrollo
 
 Requiere Node 22 o superior.
