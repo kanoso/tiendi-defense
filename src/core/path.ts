@@ -9,18 +9,28 @@ export interface Path {
   readonly length: number;
 }
 
+/**
+ * Length of the vector (dx, dy). The simulation uses this instead of the
+ * built-in hypotenuse function: a square root is exact on every machine, while
+ * the built-in may round differently from one browser to another, and online
+ * play needs every player's simulation to agree to the last bit.
+ */
+export function length(dx: number, dy: number): number {
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 export function createPath(points: readonly Point[]): Path {
   if (points.length < 2) {
     throw new Error('A path needs at least two points');
   }
   const segmentLengths: number[] = [];
-  let length = 0;
+  let total = 0;
   for (let i = 1; i < points.length; i++) {
-    const segment = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    const segment = length(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
     segmentLengths.push(segment);
-    length += segment;
+    total += segment;
   }
-  return { points, segmentLengths, length };
+  return { points, segmentLengths, length: total };
 }
 
 /** Position after travelling `distance` from the start, clamped to the path ends. */

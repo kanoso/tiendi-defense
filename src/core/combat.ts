@@ -1,4 +1,4 @@
-import type { Point } from './path';
+import { length, type Point } from './path';
 import { distanceToExit, enemyPosition } from './queries';
 import type { DamageType, Enemy, GameState, Level, Shot } from './types';
 
@@ -40,7 +40,7 @@ export function strike(game: GameState, level: Level, origin: Point, attack: Att
     if (enemy !== target.enemy) {
       if (attack.splashRadius <= 0 || !canReach(level, enemy, attack.hitsFlying)) continue;
       const position = enemyPosition(level, enemy);
-      if (Math.hypot(position.x - target.x, position.y - target.y) > attack.splashRadius) continue;
+      if (length(position.x - target.x, position.y - target.y) > attack.splashRadius) continue;
     }
     dealDamage(level, enemy, attack.damage, attack.damageType);
     if (slows) {
@@ -69,7 +69,7 @@ function pickTarget(
     // Closest to the exit, whichever road it is on.
     if (best && distanceToExit(level, enemy) >= distanceToExit(level, best.enemy)) continue;
     const position = enemyPosition(level, enemy);
-    if (Math.hypot(position.x - origin.x, position.y - origin.y) > attack.range) continue;
+    if (length(position.x - origin.x, position.y - origin.y) > attack.range) continue;
     best = { enemy, x: position.x, y: position.y };
   }
   return best;

@@ -1,4 +1,5 @@
 import { canReach, dealDamage } from './combat';
+import { length } from './path';
 import { clamp, enemyPosition, heroMaxHp, heroPower, isAlive } from './queries';
 import type { GameState, Hero, Level } from './types';
 
@@ -22,7 +23,7 @@ export function castAbility(
     // A target beyond the cast range is pulled back onto its edge.
     const dx = x - hero.x;
     const dy = y - hero.y;
-    const reach = Math.hypot(dx, dy);
+    const reach = length(dx, dy);
     const scale = reach > ability.castRange ? ability.castRange / reach : 1;
     centerX = clamp(hero.x + dx * scale, 0, level.width);
     centerY = clamp(hero.y + dy * scale, 0, level.height);
@@ -51,7 +52,7 @@ export function castAbility(
   for (const enemy of game.enemies) {
     if (!canReach(level, enemy, ability.hitsFlying)) continue;
     const position = enemyPosition(level, enemy);
-    if (Math.hypot(position.x - centerX, position.y - centerY) > ability.radius) continue;
+    if (length(position.x - centerX, position.y - centerY) > ability.radius) continue;
     dealDamage(level, enemy, damage, ability.damageType);
     enemy.stunTicks = Math.max(enemy.stunTicks, ability.stunTicks);
   }
@@ -69,7 +70,7 @@ export function updateZones(game: GameState, level: Level): void {
     for (const enemy of game.enemies) {
       if (!canReach(level, enemy, zone.hitsFlying)) continue;
       const position = enemyPosition(level, enemy);
-      if (Math.hypot(position.x - zone.x, position.y - zone.y) > zone.radius) continue;
+      if (length(position.x - zone.x, position.y - zone.y) > zone.radius) continue;
       if (zone.slowFactor < 1) {
         // One tick at a time, so the slow ends as soon as the enemy leaves.
         enemy.slowTicks = Math.max(enemy.slowTicks, 1);
@@ -81,7 +82,7 @@ export function updateZones(game: GameState, level: Level): void {
     if (pulsing && zone.healAmount > 0) {
       for (const hero of game.heroes) {
         if (!isAlive(hero)) continue;
-        if (Math.hypot(hero.x - zone.x, hero.y - zone.y) > zone.radius) continue;
+        if (length(hero.x - zone.x, hero.y - zone.y) > zone.radius) continue;
         hero.hp = Math.min(heroMaxHp(level, hero), hero.hp + zone.healAmount);
       }
     }

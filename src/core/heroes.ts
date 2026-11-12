@@ -1,5 +1,5 @@
 import { strike } from './combat';
-import type { Point } from './path';
+import { length, type Point } from './path';
 import { enemyPosition, heroMaxHp, heroPower, isAlive, isMoving, levelForXp } from './queries';
 import { TICKS_PER_SECOND, type Enemy, type GameState, type Hero, type Level } from './types';
 
@@ -21,7 +21,7 @@ export function updateHeroes(game: GameState, level: Level): void {
     const stride = level.heroTypes[hero.type].moveSpeed / TICKS_PER_SECOND;
     const dx = hero.targetX - hero.x;
     const dy = hero.targetY - hero.y;
-    const remaining = Math.hypot(dx, dy);
+    const remaining = length(dx, dy);
     if (remaining <= stride) {
       hero.x = hero.targetX;
       hero.y = hero.targetY;
@@ -68,7 +68,7 @@ export function updateBlocks(game: GameState, level: Level): void {
     for (const enemy of game.enemies) {
       if (enemy.blockedBy !== null || level.enemyTypes[enemy.type].flying) continue;
       const position = enemyPosition(level, enemy);
-      if (Math.hypot(position.x - hero.x, position.y - hero.y) > type.range) continue;
+      if (length(position.x - hero.x, position.y - hero.y) > type.range) continue;
 
       if (held >= type.blockCount) {
         // Full hands: only a more dangerous enemy is worth letting another go.
@@ -127,7 +127,7 @@ export function healWithHeroes(game: GameState, level: Level): void {
       if (ally === healer || !isAlive(ally)) continue;
       const missing = heroMaxHp(level, ally) - ally.hp;
       if (missing <= patientMissing) continue;
-      if (Math.hypot(ally.x - healer.x, ally.y - healer.y) > type.healRange) continue;
+      if (length(ally.x - healer.x, ally.y - healer.y) > type.healRange) continue;
       patient = ally;
       patientMissing = missing;
     }
@@ -158,7 +158,7 @@ export function grantXp(game: GameState, level: Level, at: Point, xp: number): v
   if (xp <= 0) return;
   for (const hero of game.heroes) {
     if (!isAlive(hero)) continue;
-    if (Math.hypot(hero.x - at.x, hero.y - at.y) > level.xpRange) continue;
+    if (length(hero.x - at.x, hero.y - at.y) > level.xpRange) continue;
     hero.xp += xp;
     const reached = levelForXp(level, hero.xp);
     if (reached === hero.level) continue;
