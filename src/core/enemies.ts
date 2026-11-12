@@ -63,6 +63,7 @@ export function collectBounties(game: GameState, level: Level): void {
     } else {
       const type = level.enemyTypes[enemy.type];
       game.gold += type.bounty;
+      game.score += type.bounty;
       grantXp(game, level, enemyPosition(level, enemy), type.xp);
     }
   }

@@ -15,10 +15,18 @@ export interface Progress {
   stars: Record<string, Partial<Record<DifficultyId, number>>>;
   /** Permanent rank bought for each hero type. A hero without an entry has none. */
   heroRanks: Record<string, number>;
+  /** Best endless game on each map, by map id and then by difficulty. */
+  endless: Record<string, Partial<Record<DifficultyId, EndlessRecord>>>;
+}
+
+export interface EndlessRecord {
+  score: number;
+  /** Wave the game ended on, counting from one. */
+  wave: number;
 }
 
 export function emptyProgress(): Progress {
-  return { version: VERSION, stars: {}, heroRanks: {} };
+  return { version: VERSION, stars: {}, heroRanks: {}, endless: {} };
 }
 
 /** Stars for a victory: three for a near-perfect defence, two for keeping half, one otherwise. */
@@ -104,6 +112,35 @@ export function buyHeroRank(progress: Progress, heroType: string): Progress {
   };
 }
 
+// --- endless mode --------------------------------------------------------
+
+/** The best endless game on a map at a difficulty, or null if none was played. */
+export function endlessBest(
+  progress: Progress,
+  mapId: string,
+  difficulty: DifficultyId,
+): EndlessRecord | null {
+  return progress.endless[mapId]?.[difficulty] ?? null;
+}
+
+/** Returns the progress after an endless game. Only a higher score replaces the record. */
+export function recordEndless(
+  progress: Progress,
+  mapId: string,
+  difficulty: DifficultyId,
+  result: EndlessRecord,
+): Progress {
+  const best = endlessBest(progress, mapId, difficulty);
+  if (best !== null && best.score >= result.score) return progress;
+  return {
+    ...progress,
+    endless: {
+      ...progress.endless,
+      [mapId]: { ...progress.endless[mapId], [difficulty]: { ...result } },
+    },
+  };
+}
+
 // --- saving --------------------------------------------------------------
 
 export function serializeProgress(progress: Progress): string {
@@ -145,6 +182,20 @@ export function parseProgress(saved: string | null): Progress {
   if (isRecord(data.heroRanks)) {
     for (const [heroType, rank] of Object.entries(data.heroRanks)) {
       if (isWholeNumberIn(rank, 1, MAX_HERO_RANK)) progress.heroRanks[heroType] = rank;
+    }
+  }
+  // Saves made before endless mode have no records; that is fine.
+  if (isRecord(data.endless)) {
+    for (const [mapId, byDifficulty] of Object.entries(data.endless)) {
+      if (!isRecord(byDifficulty)) continue;
+      for (const difficulty of DIFFICULTY_IDS) {
+        const record = byDifficulty[difficulty];
+        if (!isRecord(record)) continue;
+        const { score, wave } = record;
+        if (!isWholeNumberIn(score, 0, Number.MAX_SAFE_INTEGER)) continue;
+        if (!isWholeNumberIn(wave, 1, Number.MAX_SAFE_INTEGER)) continue;
+        progress.endless[mapId] = { ...progress.endless[mapId], [difficulty]: { score, wave } };
+      }
     }
   }
   // Ranks the stars cannot pay for mean the save was tampered with or damaged.

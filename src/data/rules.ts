@@ -332,6 +332,9 @@ export const sharedRules = {
   startingLives: 20,
   speedJitter: 0.1,
   waveHpGrowth: 0.035,
+  // Campaign maps end with their last scripted wave; `asEndless` changes that.
+  endless: null,
+  scorePerWave: 100,
   enemyTypes,
   heroTypes,
   heroRespawnTicks: 15 * 60,

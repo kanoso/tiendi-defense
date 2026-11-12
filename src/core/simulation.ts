@@ -9,7 +9,7 @@ import {
   updateBlocks,
   updateHeroes,
 } from './heroes';
-import { isOver, levelForXp, maxHpAt } from './queries';
+import { isLastWave, isOver, levelForXp, maxHpAt } from './queries';
 import { createRng } from './rng';
 import { attackWithTowers, tickTowerCooldowns } from './towers';
 import type { Command, GameState, Level } from './types';
@@ -51,6 +51,7 @@ export function createGame(level: Level, seed: number): GameState {
     zones: [],
     lives: level.startingLives,
     gold: level.startingGold,
+    score: 0,
     rng: createRng(seed),
   };
 }
@@ -90,7 +91,8 @@ function finishWaveIfCleared(game: GameState, level: Level): void {
   if (game.spawnQueue.length > 0 || game.enemies.length > 0) return;
   restoreHeroes(game, level);
   game.zones = [];
-  if (game.waveIndex === level.waves.length - 1) {
+  game.score += level.scorePerWave;
+  if (isLastWave(level, game.waveIndex)) {
     game.phase = 'won';
   } else {
     game.waveIndex++;

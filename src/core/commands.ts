@@ -1,5 +1,5 @@
 import { castAbility } from './abilities';
-import { canUseAbility, clamp, isAlive } from './queries';
+import { canUseAbility, clamp, isAlive, waveAt } from './queries';
 import { buildTower, sellTower, upgradeTower } from './towers';
 import type { Command, GameState, Level } from './types';
 import { buildSpawnQueue } from './waves';
@@ -11,7 +11,7 @@ export function applyCommand(game: GameState, level: Level, command: Command): v
       if (game.phase !== 'preparing') return;
       game.phase = 'wave';
       game.waveTick = 0;
-      game.spawnQueue = buildSpawnQueue(level.waves[game.waveIndex]);
+      game.spawnQueue = buildSpawnQueue(waveAt(level, game.waveIndex));
       return;
     }
     case 'moveHero': {

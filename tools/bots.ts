@@ -30,6 +30,7 @@ export interface Result {
   livesByWave: number[];
   heroLevels: number[];
   minutes: number;
+  score: number;
   /** How many enemies of each type reached the exit. */
   leaks: Record<string, number>;
 }
@@ -65,6 +66,7 @@ export function play(level: Level, bot: Bot, seed: number): Result {
     livesByWave,
     heroLevels: game.heroes.map((hero) => hero.level),
     minutes: game.tick / 3600,
+    score: game.score,
   };
 }
 

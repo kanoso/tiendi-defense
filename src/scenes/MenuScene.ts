@@ -1,12 +1,14 @@
 import Phaser from 'phaser';
 import { DIFFICULTIES, findDifficulty, type DifficultyId } from '../data/difficulty';
 import { MAP_IDS, MAPS, type GameMap } from '../data/maps';
+import { findMode, GAME_MODES, type GameMode } from '../data/modes';
 import { GAME_HEIGHT, GAME_WIDTH } from '../data/rules';
 import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
 import { FONT, GROUND_SCALE, HERO_STYLE, SELECTION_COLOR } from '../entities/styles';
 import {
   availableStars,
   buyHeroRank,
+  endlessBest,
   heroRank,
   isUnlocked,
   MAX_HERO_RANK,
@@ -15,7 +17,14 @@ import {
   totalStars,
   type Progress,
 } from '../progress/progress';
-import { loadDifficulty, loadProgress, saveDifficulty, saveProgress } from '../progress/storage';
+import {
+  loadDifficulty,
+  loadMode,
+  loadProgress,
+  saveDifficulty,
+  saveMode,
+  saveProgress,
+} from '../progress/storage';
 import { RANK_BONUS } from '../progress/upgrades';
 
 const MAX_STARS = 3;
@@ -23,9 +32,8 @@ const PANEL_COLOR = 0x22281d;
 const PANEL_HOVER_COLOR = 0x2f3828;
 const DIM_BORDER = 0x596150;
 
-const DIFFICULTY_TOP = 92;
-const DIFFICULTY_WIDTH = 120;
-const DIFFICULTY_HEIGHT = 32;
+const CHOICES_TOP = 92;
+const CHOICE_HEIGHT = 32;
 
 const CARD_WIDTH = 270;
 const CARD_HEIGHT = 150;
@@ -46,12 +54,14 @@ interface MapCard {
   unlocked: boolean;
   /** Stars earned at the difficulty currently selected. */
   stars: number;
+  /** Best endless score at the difficulty currently selected, if any. */
+  record: number | null;
   x: number;
   y: number;
 }
 
-interface DifficultyButton {
-  id: DifficultyId;
+interface ChoiceButton<Id extends string> {
+  id: Id;
   selected: boolean;
   x: number;
   y: number;
@@ -69,7 +79,7 @@ interface HeroTile {
 
 /**
  * A map can be opened directly with `?map=<id>` in the address (and optionally
- * `&difficulty=<id>`), skipping this screen and ignoring locks. Handy for
+ * `&difficulty=<id>` and `&mode=endless`), skipping this screen and ignoring locks. Handy for
  * development and for the browser tests. It only applies to the first screen
  * shown after loading the page.
  */
@@ -80,7 +90,9 @@ let requestedMap = address.get('map');
 export class MenuScene extends Phaser.Scene {
   // What is on screen, for the browser tests.
   cards: MapCard[] = [];
-  difficultyButtons: DifficultyButton[] = [];
+  modeButtons: ChoiceButton<GameMode>[] = [];
+  difficultyButtons: ChoiceButton<DifficultyId>[] = [];
+  mode: GameMode = 'campaign';
   heroTiles: HeroTile[] = [];
   difficulty: DifficultyId = 'normal';
   available = 0;
@@ -100,7 +112,8 @@ export class MenuScene extends Phaser.Scene {
       const mapId = requestedMap;
       requestedMap = null;
       const difficulty = findDifficulty(address.get('difficulty') ?? loadDifficulty()).id;
-      this.scene.start('game', { mapId, difficulty });
+      const mode = findMode(address.get('mode') ?? loadMode());
+      this.scene.start('game', { mapId, difficulty, mode });
       return;
     }
 
@@ -112,12 +125,13 @@ export class MenuScene extends Phaser.Scene {
 
     const progress = loadProgress();
     this.difficulty = loadDifficulty();
+    this.mode = loadMode();
     this.available = availableStars(progress);
 
     this.heading(GAME_WIDTH / 2, 44, 'Tower Defense Heroes', 38);
     this.fullscreenButton = null;
     this.drawFullscreenButton();
-    this.drawDifficulties();
+    this.drawChoices();
     this.drawMaps(progress);
     this.heading(
       GAME_WIDTH / 2,
@@ -152,28 +166,55 @@ export class MenuScene extends Phaser.Scene {
     this.fullscreenButton = { x, y: 30 };
   }
 
-  // --- difficulty ----------------------------------------------------------
+  // --- mode and difficulty -------------------------------------------------
 
-  private drawDifficulties(): void {
-    const total = DIFFICULTIES.length * DIFFICULTY_WIDTH + (DIFFICULTIES.length - 1) * 10;
-    const left = (GAME_WIDTH - total) / 2 + 50;
-    this.heading(left - 62, DIFFICULTY_TOP + DIFFICULTY_HEIGHT / 2, 'Dificultad', 17);
+  private drawChoices(): void {
+    // One row: the game mode on the left, the difficulty on the right.
+    const modeWidth = 110;
+    const difficultyWidth = 104;
+    const gap = 8;
+    const y = CHOICES_TOP + CHOICE_HEIGHT / 2;
+    let x = 118;
 
-    this.difficultyButtons = DIFFICULTIES.map((difficulty, index) => {
-      const button: DifficultyButton = {
-        id: difficulty.id,
-        selected: difficulty.id === this.difficulty,
-        x: left + index * (DIFFICULTY_WIDTH + 10) + DIFFICULTY_WIDTH / 2,
-        y: DIFFICULTY_TOP + DIFFICULTY_HEIGHT / 2,
-      };
-      const frame = this.panel(button.x, button.y, DIFFICULTY_WIDTH, DIFFICULTY_HEIGHT, button.selected);
-      this.clickable(frame, () => {
-        saveDifficulty(difficulty.id);
-        this.scene.restart();
+    const row = <Id extends string>(
+      title: string,
+      titleWidth: number,
+      options: readonly { id: Id; name: string }[],
+      selectedId: Id,
+      width: number,
+      onPick: (id: Id) => void,
+    ): ChoiceButton<Id>[] => {
+      this.heading(x + titleWidth / 2, y, title, 16);
+      x += titleWidth + gap;
+      const buttons = options.map((option) => {
+        const button: ChoiceButton<Id> = {
+          id: option.id,
+          selected: option.id === selectedId,
+          x: x + width / 2,
+          y,
+        };
+        const frame = this.panel(button.x, y, width, CHOICE_HEIGHT, button.selected);
+        this.clickable(frame, () => {
+          onPick(option.id);
+          this.scene.restart();
+        });
+        this.label(button.x, y, option.name, 15, button.selected ? '#ffe066' : '#f4f1e8');
+        x += width + gap;
+        return button;
       });
-      this.label(button.x, button.y, difficulty.name, 16, button.selected ? '#ffe066' : '#f4f1e8');
-      return button;
-    });
+      x += 22;
+      return buttons;
+    };
+
+    this.modeButtons = row('Modo', 50, GAME_MODES, this.mode, modeWidth, saveMode);
+    this.difficultyButtons = row(
+      'Dificultad',
+      84,
+      DIFFICULTIES,
+      this.difficulty,
+      difficultyWidth,
+      saveDifficulty,
+    );
   }
 
   // --- maps ----------------------------------------------------------------
@@ -186,15 +227,16 @@ export class MenuScene extends Phaser.Scene {
         mapId: map.id,
         unlocked: isUnlocked(progress, MAP_IDS, map.id),
         stars: starsOn(progress, map.id, this.difficulty),
+        record: endlessBest(progress, map.id, this.difficulty)?.score ?? null,
         x: left + index * (CARD_WIDTH + CARD_GAP) + CARD_WIDTH / 2,
         y: CARD_TOP + CARD_HEIGHT / 2,
       };
-      this.drawMapCard(map, card, index);
+      this.drawMapCard(map, card, index, progress);
       return card;
     });
   }
 
-  private drawMapCard(map: GameMap, card: MapCard, index: number): void {
+  private drawMapCard(map: GameMap, card: MapCard, index: number, progress: Progress): void {
     const top = card.y - CARD_HEIGHT / 2;
     const frame = this.panel(card.x, card.y, CARD_WIDTH, CARD_HEIGHT, card.unlocked);
     if (card.unlocked) this.clickable(frame, () => this.openMap(card));
@@ -213,7 +255,11 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAlpha(faded);
 
-    if (card.unlocked) {
+    if (card.unlocked && this.mode === 'endless') {
+      const best = endlessBest(progress, map.id, this.difficulty);
+      const text = best ? `Récord: ${best.score} · oleada ${best.wave}` : 'Sin récord todavía';
+      this.label(card.x, top + CARD_HEIGHT - 26, text, 16, '#ffe066', true);
+    } else if (card.unlocked) {
       const earned = '★'.repeat(card.stars) + '☆'.repeat(MAX_STARS - card.stars);
       this.label(card.x, top + CARD_HEIGHT - 26, earned, 28, '#ffe066', true);
     } else {
@@ -223,7 +269,11 @@ export class MenuScene extends Phaser.Scene {
 
   private openMap(card: MapCard | undefined): void {
     if (card?.unlocked) {
-      this.scene.start('game', { mapId: card.mapId, difficulty: this.difficulty });
+      this.scene.start('game', {
+        mapId: card.mapId,
+        difficulty: this.difficulty,
+        mode: this.mode,
+      });
     }
   }
 

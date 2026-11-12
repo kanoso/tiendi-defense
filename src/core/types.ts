@@ -1,6 +1,6 @@
 import type { Path, Point } from './path';
 import type { Rng } from './rng';
-import type { PendingSpawn, Wave } from './waves';
+import type { EndlessRules, PendingSpawn, Wave } from './waves';
 
 export const TICKS_PER_SECOND = 60;
 export const STEP_MS = 1000 / TICKS_PER_SECOND;
@@ -114,7 +114,12 @@ export interface Level {
   height: number;
   /** Roads the enemies walk. Most maps have one; a wave group picks its own. */
   paths: readonly Path[];
+  /** Scripted waves, in order. Empty in endless mode. */
   waves: readonly Wave[];
+  /** How to keep making waves once the scripted ones run out. Null ends the game there. */
+  endless: EndlessRules | null;
+  /** Points for every wave survived. Kills score their bounty. */
+  scorePerWave: number;
   startingGold: number;
   startingLives: number;
   /** Random speed variation per enemy, as a fraction (0.1 = ±10 %). */
@@ -238,6 +243,7 @@ export interface GameState {
   zones: Zone[];
   lives: number;
   gold: number;
+  score: number;
   rng: Rng;
 }
 

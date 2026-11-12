@@ -16,7 +16,9 @@ import {
   type Level,
 } from '../core/simulation';
 import { applyDifficulty, findDifficulty, type DifficultyId } from '../data/difficulty';
+import { asEndless } from '../data/endless';
 import { findMap, MAPS, type GameMap } from '../data/maps';
+import type { GameMode } from '../data/modes';
 import { drawBoard } from '../entities/board';
 import { drawOverlay, type Aim } from '../entities/overlay';
 import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
@@ -34,7 +36,7 @@ import {
 } from '../entities/styles';
 import { HeroCards } from '../ui/HeroCards';
 import { TowerMenu } from '../ui/TowerMenu';
-import { recordVictory, starsFor } from '../progress/progress';
+import { endlessBest, recordEndless, recordVictory, starsFor } from '../progress/progress';
 import { loadProgress, saveProgress } from '../progress/storage';
 import { applyHeroRanks } from '../progress/upgrades';
 import { listen, soundEventsSince, type Heard } from '../ui/soundEvents';
@@ -98,6 +100,9 @@ interface TowerView {
 export class GameScene extends Phaser.Scene {
   private map: GameMap = MAPS[0];
   private difficulty: DifficultyId = 'normal';
+  private mode: GameMode = 'campaign';
+  /** Whether the endless game on screen has been saved, so it is saved only once. */
+  private endlessRecorded = false;
   private level: Level = MAPS[0].level;
   /** Stars earned by the victory on screen, once it has been saved. */
   private earnedStars: number | null = null;
@@ -156,12 +161,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Both come from the menu. A restart passes nothing and keeps what it had. */
-  init(data?: { mapId?: string; difficulty?: DifficultyId }): void {
+  init(data?: { mapId?: string; difficulty?: DifficultyId; mode?: GameMode }): void {
     if (data?.mapId) this.map = findMap(data.mapId);
     if (data?.difficulty) this.difficulty = data.difficulty;
+    if (data?.mode) this.mode = data.mode;
     // The map as this player meets it: at the chosen difficulty, with their hero ranks.
     const atDifficulty = applyDifficulty(this.map.level, this.difficulty);
-    this.level = applyHeroRanks(atDifficulty, loadProgress().heroRanks);
+    const withRanks = applyHeroRanks(atDifficulty, loadProgress().heroRanks);
+    this.level = this.mode === 'endless' ? asEndless(withRanks) : withRanks;
   }
 
   preload(): void {
@@ -190,6 +197,7 @@ export class GameScene extends Phaser.Scene {
     this.sounds = new SoundPlayer(this);
     this.heard = listen(this.game_);
     this.earnedStars = null;
+    this.endlessRecorded = false;
 
     drawBoard(this, this.level);
     this.createHeroViews();
@@ -209,6 +217,7 @@ export class GameScene extends Phaser.Scene {
     for (const event of soundEventsSince(this.heard, this.game_)) this.sounds.play(event);
     this.heard = listen(this.game_);
     this.recordVictoryOnce();
+    this.recordEndlessOnce();
     this.followTutorial();
     this.stopAimingIfUnavailable();
     this.announceLevelUps();
@@ -313,6 +322,17 @@ export class GameScene extends Phaser.Scene {
     if (this.game_.phase !== 'won' || this.earnedStars !== null) return;
     this.earnedStars = starsFor(this.game_.lives, this.level.startingLives);
     saveProgress(recordVictory(loadProgress(), this.map.id, this.difficulty, this.earnedStars));
+  }
+
+  /** An endless game always ends in defeat; that is when its score counts. */
+  private recordEndlessOnce(): void {
+    if (this.mode !== 'endless' || this.game_.phase !== 'lost' || this.endlessRecorded) return;
+    this.endlessRecorded = true;
+    const progress = loadProgress();
+    const previous = endlessBest(progress, this.map.id, this.difficulty);
+    const result = { score: this.game_.score, wave: this.game_.waveIndex + 1 };
+    saveProgress(recordEndless(progress, this.map.id, this.difficulty, result));
+    if (previous === null || result.score > previous.score) this.showNotice('¡Nuevo récord!');
   }
 
   private togglePause(): void {
@@ -633,7 +653,7 @@ export class GameScene extends Phaser.Scene {
     const wave = topButton('Iniciar oleada', 132, () => this.issue({ type: 'startWave' }), true);
 
     this.add
-      .text(width - 16, 50, `${this.map.name} · ${findDifficulty(this.difficulty).name}`, {
+      .text(width - 16, 50, this.describeGame(), {
         fontFamily: FONT,
         fontSize: '13px',
         fontStyle: 'bold',
@@ -694,6 +714,13 @@ export class GameScene extends Phaser.Scene {
     this.controls = { wave, speed, pause, sound, skip, resume, pauseMenu, retry, endMenu };
   }
 
+  /** The map, difficulty and mode being played, for the corner of the screen. */
+  private describeGame(): string {
+    const parts = [this.map.name, findDifficulty(this.difficulty).name];
+    if (this.mode === 'endless') parts.push('Sin fin');
+    return parts.join(' · ');
+  }
+
   /** A text button. `primary` marks the one the player most likely wants. */
   private button(
     x: number,
@@ -722,8 +749,10 @@ export class GameScene extends Phaser.Scene {
   private syncInterface(): void {
     const game = this.game_;
     const over = isOver(game);
-    const wave = `${game.waveIndex + 1}/${this.level.waves.length}`;
-    this.hud.setText(`Vidas: ${game.lives}    Oro: ${game.gold}    Oleada: ${wave}`);
+    const endless = this.mode === 'endless';
+    const wave = endless ? `${game.waveIndex + 1}` : `${game.waveIndex + 1}/${this.level.waves.length}`;
+    const points = endless ? `    Puntos: ${game.score}` : '';
+    this.hud.setText(`Vidas: ${game.lives}    Oro: ${game.gold}    Oleada: ${wave}${points}`);
 
     const lesson = this.tutorial.text;
     const controls = this.usingTouch ? TOUCH_SUMMARY : KEY_SUMMARY;
@@ -738,7 +767,8 @@ export class GameScene extends Phaser.Scene {
 
     const stars = this.earnedStars ?? 0;
     const earned = '★'.repeat(stars) + '☆'.repeat(3 - stars);
-    const title = over ? (game.phase === 'won' ? `Victoria ${earned}` : 'Derrota') : 'Pausa';
+    const defeat = endless ? `${game.score} puntos` : 'Derrota';
+    const title = over ? (game.phase === 'won' ? `Victoria ${earned}` : defeat) : 'Pausa';
     this.bigTitle.setText(title).setVisible(over || this.paused);
     this.controls.resume.setVisible(this.paused && !over);
     this.controls.pauseMenu.setVisible(this.paused && !over);

@@ -96,6 +96,8 @@ function makeLevel(overrides: Partial<Level> = {}): Level {
     startingLives: 20,
     speedJitter: 0,
     waveHpGrowth: 0,
+    endless: null,
+    scorePerWave: 100,
     enemyTypes: {
       grunt: { ...enemyBase, maxHp: 30, bounty: 5, damage: 5, xp: 10 },
       brute: { ...enemyBase, maxHp: 1000, bounty: 50, livesCost: 5 },
@@ -789,6 +791,89 @@ describe('abilities', () => {
       const game = duel('stormer', 370, { 250: [cast(300, 0)] });
       expect(game.enemies[0].distance).toBeCloseTo(370, 0);
     });
+  });
+});
+
+describe('score', () => {
+  it('starts at zero', () => {
+    expect(createGame(makeLevel(), 1).score).toBe(0);
+  });
+
+  it('grows by the bounty of each enemy killed', () => {
+    const level = makeLevel({
+      waves: [[...one('grunt'), ...one('grunt', 400)]],
+      heroes: [{ type: 'archer', x: 300, y: 0 }],
+    });
+    const game = started(level, 360);
+    expect(game.score).toBe(5);
+  });
+
+  it('grows by the wave bonus when a wave is cleared', () => {
+    // The grunt escapes, so the only points are for surviving the wave.
+    const level = makeLevel({ waves: [one('grunt'), one('grunt')] });
+    const game = started(level, 620);
+    expect(game.score).toBe(100);
+  });
+});
+
+describe('endless mode', () => {
+  // No scripted waves: every wave is one more grunt than the last, forever.
+  const endless = {
+    waves: [],
+    endless: {
+      groups: [
+        {
+          enemy: 'grunt',
+          fromWave: 0,
+          everyWaves: 1,
+          baseCount: 1,
+          countPerWave: 1,
+          intervalTicks: 30,
+          minIntervalTicks: 30,
+          intervalDropPerWave: 0,
+          delayTicks: 0,
+        },
+      ],
+    },
+  };
+
+  /** Starts every wave as soon as it can, for the given number of ticks. */
+  function playOn(level: Level, ticks: number): GameState {
+    const game = createGame(level, 1);
+    for (let i = 0; i < ticks; i++) {
+      step(game, level, game.phase === 'preparing' ? [START_WAVE] : []);
+    }
+    return game;
+  }
+
+  it('builds its waves from the rules instead of a script', () => {
+    const game = started(makeLevel(endless), 1);
+    expect(game.phase).toBe('wave');
+    expect(game.enemies).toMatchObject([{ type: 'grunt' }]);
+  });
+
+  it('never ends in victory: clearing a wave only brings the next one', () => {
+    const level = makeLevel({ ...endless, startingLives: 1000 });
+    const game = playOn(level, 4000);
+    expect(game.phase).not.toBe('won');
+    expect(game.waveIndex).toBeGreaterThan(3);
+  });
+
+  it('sends more enemies on later waves', () => {
+    const level = makeLevel({ ...endless, startingLives: 1000 });
+    const game = createGame(level, 1);
+    run(game, level, 1, { 0: [START_WAVE] });
+    const first = game.spawnQueue.length + game.enemies.length;
+    run(game, level, 700);
+    run(game, level, 1, { [game.tick]: [START_WAVE] });
+    const second = game.spawnQueue.length + game.enemies.length;
+    expect(first).toBe(1);
+    expect(second).toBe(2);
+  });
+
+  it('still ends in defeat when the lives run out', () => {
+    const game = playOn(makeLevel({ ...endless, startingLives: 2 }), 4000);
+    expect(game.phase).toBe('lost');
   });
 });
 

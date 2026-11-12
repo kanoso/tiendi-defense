@@ -11,6 +11,8 @@ el jugador mueve a cuatro héroes por el mapa, cada uno con su rol y sus habilid
 - Construye torres en los círculos con `+` y ubica a tus héroes.
 - Inicia cada oleada. Si un enemigo llega a la salida, pierdes vidas.
 - Las estrellas que ganas sirven para mejorar a los héroes de forma permanente.
+- En el modo **Sin fin** las oleadas no terminan: cuenta el puntaje, y se guarda
+  el récord de cada mapa.
 
 | Acción | Control |
 |---|---|

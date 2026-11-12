@@ -1,5 +1,6 @@
 import { pointAt, type Point } from './path';
 import type { Enemy, GameState, Hero, Level, Tower } from './types';
+import { buildEndlessWave, type Wave } from './waves';
 
 // Read-only questions about the state. Safe to call from the renderer.
 
@@ -15,6 +16,18 @@ export function enemyPosition(level: Level, enemy: Enemy): Point {
 /** How far an enemy still has to walk to reach the exit of its path. */
 export function distanceToExit(level: Level, enemy: Enemy): number {
   return level.paths[enemy.path].length - enemy.distance;
+}
+
+/** The wave with that number: scripted while they last, generated afterwards. */
+export function waveAt(level: Level, index: number): Wave {
+  if (index < level.waves.length) return level.waves[index];
+  if (level.endless === null) return [];
+  return buildEndlessWave(level.endless, index - level.waves.length, level.paths.length);
+}
+
+/** Whether clearing this wave wins the game. Never, in endless mode. */
+export function isLastWave(level: Level, index: number): boolean {
+  return level.endless === null && index >= level.waves.length - 1;
 }
 
 export function isOver(game: GameState): boolean {

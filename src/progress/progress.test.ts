@@ -4,11 +4,13 @@ import {
   bestStars,
   buyHeroRank,
   emptyProgress,
+  endlessBest,
   heroRank,
   isUnlocked,
   MAX_HERO_RANK,
   nextRankCost,
   parseProgress,
+  recordEndless,
   recordVictory,
   serializeProgress,
   starsFor,
@@ -222,5 +224,71 @@ describe('saving', () => {
     const progress = parseProgress(saved);
     expect(heroRank(progress, 'warrior')).toBe(0);
     expect(availableStars(progress)).toBe(1);
+  });
+});
+
+describe('endless records', () => {
+  it('start out empty', () => {
+    expect(endlessBest(emptyProgress(), 'meadow', 'normal')).toBeNull();
+  });
+
+  it('keep the score and the wave reached', () => {
+    const progress = recordEndless(emptyProgress(), 'meadow', 'normal', { score: 1200, wave: 9 });
+    expect(endlessBest(progress, 'meadow', 'normal')).toEqual({ score: 1200, wave: 9 });
+  });
+
+  it('are replaced only by a higher score', () => {
+    let progress = recordEndless(emptyProgress(), 'meadow', 'normal', { score: 1200, wave: 9 });
+    progress = recordEndless(progress, 'meadow', 'normal', { score: 800, wave: 11 });
+    expect(endlessBest(progress, 'meadow', 'normal')).toEqual({ score: 1200, wave: 9 });
+    progress = recordEndless(progress, 'meadow', 'normal', { score: 1500, wave: 10 });
+    expect(endlessBest(progress, 'meadow', 'normal')).toEqual({ score: 1500, wave: 10 });
+  });
+
+  it('are kept apart for each map and difficulty', () => {
+    let progress = recordEndless(emptyProgress(), 'meadow', 'normal', { score: 1200, wave: 9 });
+    progress = recordEndless(progress, 'meadow', 'hard', { score: 300, wave: 3 });
+    expect(endlessBest(progress, 'meadow', 'hard')).toEqual({ score: 300, wave: 3 });
+    expect(endlessBest(progress, 'canyon', 'normal')).toBeNull();
+  });
+
+  it('give no stars', () => {
+    const progress = recordEndless(emptyProgress(), 'meadow', 'normal', { score: 9999, wave: 40 });
+    expect(totalStars(progress)).toBe(0);
+  });
+
+  it('do not change the progress they were given', () => {
+    const before = emptyProgress();
+    recordEndless(before, 'meadow', 'normal', { score: 1200, wave: 9 });
+    expect(before).toEqual(emptyProgress());
+  });
+
+  it('survive saving and loading', () => {
+    const progress = recordEndless(withSixStars(), 'canyon', 'easy', { score: 640, wave: 5 });
+    expect(parseProgress(serializeProgress(progress))).toEqual(progress);
+  });
+
+  it('are simply absent in saves made before endless mode existed', () => {
+    const saved = JSON.stringify({ version: 2, stars: { meadow: { normal: 3 } }, heroRanks: {} });
+    const progress = parseProgress(saved);
+    expect(endlessBest(progress, 'meadow', 'normal')).toBeNull();
+    expect(totalStars(progress)).toBe(3);
+  });
+
+  it('are dropped when they make no sense', () => {
+    const saved = JSON.stringify({
+      version: 2,
+      stars: {},
+      heroRanks: {},
+      endless: {
+        meadow: { normal: { score: -5, wave: 2 }, hard: { score: 100, wave: 'x' }, easy: 7 },
+        canyon: { normal: { score: 250, wave: 4 } },
+      },
+    });
+    const progress = parseProgress(saved);
+    expect(endlessBest(progress, 'meadow', 'normal')).toBeNull();
+    expect(endlessBest(progress, 'meadow', 'hard')).toBeNull();
+    expect(endlessBest(progress, 'meadow', 'easy')).toBeNull();
+    expect(endlessBest(progress, 'canyon', 'normal')).toEqual({ score: 250, wave: 4 });
   });
 });

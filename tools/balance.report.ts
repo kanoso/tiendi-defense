@@ -1,6 +1,7 @@
 import { it } from 'vitest';
 import type { Level } from '../src/core/simulation';
 import { applyDifficulty, DIFFICULTIES } from '../src/data/difficulty';
+import { asEndless } from '../src/data/endless';
 import { MAPS } from '../src/data/maps';
 import { MAX_HERO_RANK } from '../src/progress/progress';
 import { applyHeroRanks } from '../src/progress/upgrades';
@@ -59,6 +60,22 @@ it('prints how far each scripted player gets on each map', () => {
     lines.push('', `=== ${MAPS[0].name} · ${difficulty.name} · ${best.name}`);
     lines.push(...report(level, { ...best, name: 'heroes without ranks' }));
     lines.push(...report(applyHeroRanks(level, maxRanks), { ...best, name: 'heroes at top rank' }));
+  }
+  // Endless mode has no victory: what matters is how long the best player lasts.
+  for (const map of MAPS) {
+    lines.push('', `=== ${map.name} · endless · ${best.name}`);
+    for (const [label, level] of [
+      ['heroes without ranks', asEndless(map.level)],
+      ['heroes at top rank', asEndless(applyHeroRanks(map.level, maxRanks))],
+    ] as const) {
+      const runs = SEEDS.map((seed) => play(level, best, seed));
+      lines.push(
+        `  ${label.padEnd(22)}` +
+          runs
+            .map((run) => `wave ${run.wave}, ${run.score} pts, ${run.minutes.toFixed(1)} min`)
+            .join('   |   '),
+      );
+    }
   }
   console.log(lines.join('\n'));
 });

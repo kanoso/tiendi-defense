@@ -99,6 +99,8 @@ test.describe('map picker', () => {
 interface Menu {
   difficulty: string;
   available: number;
+  mode: string;
+  modeButtons: { id: string; selected: boolean; x: number; y: number }[];
   difficultyButtons: { id: string; selected: boolean; x: number; y: number }[];
   heroTiles: { heroType: string; rank: number; cost: number | null; x: number; y: number }[];
 }
@@ -109,6 +111,8 @@ function menu(page: Page): Promise<Menu> {
     return {
       difficulty: scene.difficulty,
       available: scene.available,
+      mode: scene.mode,
+      modeButtons: scene.modeButtons,
       difficultyButtons: scene.difficultyButtons,
       heroTiles: scene.heroTiles,
     };
@@ -210,6 +214,107 @@ test.describe('hero upgrades', () => {
     await clickMap(page, mage.x, mage.y);
     await page.waitForTimeout(300);
     expect((await menu(page)).heroTiles.find((t) => t.heroType === 'mage')?.rank).toBe(0);
+  });
+});
+
+test.describe('endless mode', () => {
+  /** Test setup only: ends the endless game on screen with a given score and wave. */
+  async function loseWith(page: Page, score: number, wave: number): Promise<void> {
+    await page.evaluate(
+      ([points, waveNumber]) => {
+        const game = (window as any).__game.scene.getScene('game').game_;
+        game.score = points;
+        game.waveIndex = waveNumber - 1;
+        game.lives = 0;
+        game.phase = 'lost';
+      },
+      [score, wave] as const,
+    );
+  }
+
+  async function chooseEndlessInMenu(page: Page): Promise<void> {
+    const endless = (await menu(page)).modeButtons[1];
+    await clickMap(page, endless.x, endless.y);
+    await expect.poll(async () => (await menu(page)).mode).toBe('endless');
+  }
+
+  test('the campaign is selected on a first visit, and the choice is remembered', async ({
+    page,
+  }) => {
+    await openMenu(page);
+    expect((await menu(page)).mode).toBe('campaign');
+    await chooseEndlessInMenu(page);
+
+    await openMenu(page);
+    expect((await menu(page)).mode).toBe('endless');
+  });
+
+  test('a map started from the menu in endless mode has no last wave', async ({ page }) => {
+    await openMenu(page);
+    await chooseEndlessInMenu(page);
+    const [first] = await cards(page);
+    await clickMap(page, first.x, first.y);
+    await waitForGame(page);
+
+    const played = await page.evaluate(() => {
+      const scene: any = (window as any).__game.scene.getScene('game');
+      return { mode: scene.mode, scripted: scene.level.waves.length, hud: scene.hud.text };
+    });
+    expect(played.mode).toBe('endless');
+    expect(played.scripted).toBe(0);
+    expect(played.hud).toContain('Puntos');
+
+    await page.keyboard.press('Space');
+    await expect.poll(async () => (await snapshot(page)).enemies).toBeGreaterThan(0);
+  });
+
+  test('the score of a finished game is shown and kept as the record', async ({ page }) => {
+    await page.goto('/?map=meadow&mode=endless');
+    await waitForGame(page);
+    await loseWith(page, 777, 6);
+    await expect.poll(async () => (await snapshot(page)).endTitle).toBe('777 puntos');
+    await expect.poll(async () => (await snapshot(page)).notice).toContain('récord');
+
+    await page.keyboard.press('Enter');
+    await expect.poll(() => isShowing(page, 'menu')).toBe(true);
+    await chooseEndlessInMenu(page);
+    await expect.poll(async () => (await cards(page))[0]).toMatchObject({ record: 777 });
+  });
+
+  test('a lower score does not replace the record', async ({ page }) => {
+    await page.addInitScript(
+      ([key, value]) => localStorage.setItem(key, value),
+      [
+        PROGRESS_KEY,
+        JSON.stringify({
+          version: 2,
+          stars: {},
+          heroRanks: {},
+          endless: { meadow: { normal: { score: 900, wave: 8 } } },
+        }),
+      ] as const,
+    );
+    await page.goto('/?map=meadow&mode=endless');
+    await waitForGame(page);
+    await loseWith(page, 100, 2);
+    await expect.poll(async () => (await snapshot(page)).endTitle).toBe('100 puntos');
+    await page.waitForTimeout(300);
+    expect((await snapshot(page)).notice ?? '').not.toContain('récord');
+
+    await page.keyboard.press('Enter');
+    await expect.poll(() => isShowing(page, 'menu')).toBe(true);
+    await chooseEndlessInMenu(page);
+    await expect.poll(async () => (await cards(page))[0]).toMatchObject({ record: 900 });
+  });
+
+  test('an endless game gives no stars', async ({ page }) => {
+    await page.goto('/?map=meadow&mode=endless');
+    await waitForGame(page);
+    await loseWith(page, 5000, 30);
+    await expect.poll(async () => (await snapshot(page)).endTitle).toBe('5000 puntos');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => isShowing(page, 'menu')).toBe(true);
+    expect((await menu(page)).available).toBe(0);
   });
 });
 
