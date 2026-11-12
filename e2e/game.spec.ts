@@ -185,6 +185,46 @@ test('the second ability fires with its own key once unlocked', async ({ page })
   await expect.poll(async () => (await snapshot(page)).zones).toBe(1);
 });
 
+test('each ability plays its own visual effect', async ({ page }) => {
+  // Which effect is playing, read from what the scene is drawing.
+  const playing = () =>
+    page.evaluate(() =>
+      (window as any).__game.scene.getScene('game').castEffects.map((effect: any) => effect.kind),
+    );
+  await giveHeroesLevel(page, 4);
+  await page.keyboard.press('Space');
+  await expect.poll(async () => (await snapshot(page)).enemies).toBeGreaterThan(0);
+
+  // Hero key, ability key, whether it needs a spot on the map, and its effect.
+  const abilities = [
+    ['1', 'q', false, 'quake'],
+    ['2', 'q', false, 'volley'],
+    ['2', 'w', true, 'pierce'],
+    ['3', 'q', true, 'meteor'],
+    ['4', 'w', true, 'freeze'],
+    ['1', 'w', false, 'zone'],
+  ] as const;
+  for (const [hero, key, aimed, effect] of abilities) {
+    await page.keyboard.press(hero);
+    await page.keyboard.press(key);
+    if (aimed) await clickMap(page, 300, 250);
+    await expect.poll(playing, { intervals: [30, 60, 100] }).toContain(effect);
+  }
+});
+
+test('an ability effect goes away by itself', async ({ page }) => {
+  const playing = () =>
+    page.evaluate(() => (window as any).__game.scene.getScene('game').castEffects.length);
+  await giveHeroesLevel(page, 2);
+  await page.keyboard.press('Space');
+  await expect.poll(async () => (await snapshot(page)).enemies).toBeGreaterThan(0);
+
+  await page.keyboard.press('1');
+  await page.keyboard.press('q');
+  await expect.poll(playing, { intervals: [30, 60, 100] }).toBe(1);
+  await expect.poll(playing).toBe(0);
+});
+
 test('defeat is announced and the R key starts a fresh game', async ({ page }) => {
   await clickSlot(page, 1);
   await clickMenuOption(page, 'Arquería');

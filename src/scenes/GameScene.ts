@@ -19,6 +19,7 @@ import { applyDifficulty, findDifficulty, type DifficultyId } from '../data/diff
 import { asEndless } from '../data/endless';
 import { findMap, MAPS, type GameMap } from '../data/maps';
 import type { GameMode } from '../data/modes';
+import { CAST_EFFECT_TICKS, type CastEffect } from '../entities/abilityEffects';
 import { drawBoard } from '../entities/board';
 import { drawOverlay, type Aim } from '../entities/overlay';
 import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
@@ -127,6 +128,10 @@ export class GameScene extends Phaser.Scene {
   private towerMenu!: TowerMenu;
   private hud!: Phaser.GameObjects.Text;
   private notice!: Phaser.GameObjects.Text;
+  /** Abilities whose visual effect is still playing. Also read by the browser tests. */
+  private castEffects: CastEffect[] = [];
+  /** Tick of the last cast already shown for each hero, to spot a new one. */
+  private shownCasts = new Map<number, number>();
   /** Last level seen for each hero, to notice when one goes up. */
   private knownLevels = new Map<number, number>();
 
@@ -191,6 +196,8 @@ export class GameScene extends Phaser.Scene {
     this.heroViews.clear();
     this.towerViews.clear();
     this.knownLevels.clear();
+    this.castEffects = [];
+    this.shownCasts.clear();
     this.selectedHeroId = this.game_.heroes[0]?.id ?? null;
     this.aim = null;
     this.speed = 1;
@@ -224,6 +231,7 @@ export class GameScene extends Phaser.Scene {
     this.recordEndlessOnce();
     this.followTutorial();
     this.stopAimingIfUnavailable();
+    this.trackCastEffects();
     this.announceLevelUps();
     this.syncEnemies(this.game_.phase === 'wave' ? alpha : 0);
     this.syncHeroes();
@@ -234,6 +242,7 @@ export class GameScene extends Phaser.Scene {
       selectedHeroId: this.selectedHeroId,
       menuSlot: this.towerMenu.slot,
       aim: this.aim,
+      castEffects: this.castEffects,
       pointer: { x: this.input.activePointer.worldX, y: this.input.activePointer.worldY },
       enemyPositions: this.enemyPositions,
     });
@@ -474,6 +483,31 @@ export class GameScene extends Phaser.Scene {
               `(${hero.id}, luego ${ABILITY_KEYS[unlocked]})`,
       );
     }
+  }
+
+  /**
+   * Starts the visual effect of every ability cast since the last frame, and
+   * drops the ones that finished. Several can play at once, even from one hero.
+   */
+  private trackCastEffects(): void {
+    const tick = this.game_.tick;
+    for (const hero of this.game_.heroes) {
+      const cast = hero.lastCast;
+      if (!cast || this.shownCasts.get(hero.id) === cast.tick) continue;
+      this.shownCasts.set(hero.id, cast.tick);
+      this.castEffects.push({
+        kind: HERO_STYLE[hero.type].effects[cast.ability],
+        x: cast.x,
+        y: cast.y,
+        originX: hero.x,
+        originY: hero.y,
+        radius: this.level.heroTypes[hero.type].abilities[cast.ability].radius,
+        startTick: cast.tick,
+      });
+    }
+    this.castEffects = this.castEffects.filter(
+      (effect) => tick - effect.startTick < CAST_EFFECT_TICKS[effect.kind],
+    );
   }
 
   /** Aiming ends by itself if the hero dies or the wave finishes meanwhile. */

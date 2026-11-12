@@ -1,3 +1,4 @@
+import type { CastEffectKind } from './abilityEffects';
 import type { SpriteName } from './sprites';
 
 // How things look and what they are called on screen. No game rules here.
@@ -14,9 +15,8 @@ export const TOWER_BASE_SCALE = 2.25;
 export const TOWER_ICON_SCALE = 1.5;
 export const GROUND_SCALE = 2;
 
-/** How long a shot or an ability burst stays visible. */
+/** How long a shot stays visible. */
 export const SHOT_VISIBLE_TICKS = 6;
-export const CAST_VISIBLE_TICKS = 24;
 
 export const SHOT_COLOR = 0xfff3b0;
 export const SPLASH_COLOR = 0xffb347;
@@ -39,36 +39,40 @@ export const ENEMY_STYLE: Record<string, { radius: number; sprite: SpriteName; s
 export const ABILITY_KEYS = ['Q', 'W'];
 
 /**
- * `color` tints the hero's ability effects. `abilities` are the on-screen names,
- * in the same order as the hero type's abilities.
+ * `abilities` are the on-screen names and `effects` what each one looks like when
+ * cast, both in the same order as the hero type's abilities.
  */
 export const HERO_STYLE: Record<
   string,
-  { color: number; sprite: SpriteName; name: string; abilities: string[] }
+  { color: number; sprite: SpriteName; name: string; abilities: string[]; effects: CastEffectKind[] }
 > = {
   warrior: {
     color: 0xe8edf2,
     sprite: 'hero-warrior',
     name: 'Guerrero',
     abilities: ['Golpe sísmico', 'Segundo aliento'],
+    effects: ['quake', 'zone'],
   },
   archer: {
     color: 0x6fcf4a,
     sprite: 'hero-archer',
     name: 'Arquera',
     abilities: ['Ráfaga', 'Tiro perforante'],
+    effects: ['volley', 'pierce'],
   },
   mage: {
     color: 0xb37feb,
     sprite: 'hero-mage',
     name: 'Mago',
     abilities: ['Meteoro', 'Tormenta arcana'],
+    effects: ['meteor', 'zone'],
   },
   support: {
     color: 0x7ef0e0,
     sprite: 'hero-support',
     name: 'Soporte',
     abilities: ['Zona de hielo', 'Congelación'],
+    effects: ['zone', 'freeze'],
   },
 };
 

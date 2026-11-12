@@ -2,7 +2,6 @@ import type Phaser from 'phaser';
 import type { Point } from '../core/path';
 import { heroMaxHp, isAlive, isMoving, type GameState, type Hero, type Level } from '../core/simulation';
 import {
-  CAST_VISIBLE_TICKS,
   ENEMY_STYLE,
   HEAL_COLOR,
   HERO_RADIUS,
@@ -12,9 +11,9 @@ import {
   SHOT_VISIBLE_TICKS,
   SLOW_COLOR,
   SPLASH_COLOR,
-  STORM_COLOR,
   STUN_COLOR,
 } from './styles';
+import { drawCastEffect, drawZone, type CastEffect } from './abilityEffects';
 
 type Graphics = Phaser.GameObjects.Graphics;
 
@@ -32,6 +31,8 @@ export interface OverlayView {
   menuSlot: number | null;
   /** Targeted ability being aimed, if any. */
   aim: Aim | null;
+  /** Abilities cast a moment ago, still playing their effect. */
+  castEffects: readonly CastEffect[];
   pointer: Point;
   /** Where each enemy is drawn this frame, by enemy id. */
   enemyPositions: ReadonlyMap<number, Point>;
@@ -52,30 +53,11 @@ export function drawOverlay(g: Graphics, view: OverlayView): void {
 }
 
 function drawZones(g: Graphics, { game }: OverlayView): void {
-  for (const zone of game.zones) {
-    // Colored by what the zone mainly does: hurt, slow or heal.
-    const color = zone.damage > 0 ? STORM_COLOR : zone.slowFactor < 1 ? SLOW_COLOR : HEAL_COLOR;
-    g.fillStyle(color, 0.22);
-    g.fillCircle(zone.x, zone.y, zone.radius);
-    g.lineStyle(2, color, 0.7);
-    g.strokeCircle(zone.x, zone.y, zone.radius);
-  }
+  for (const zone of game.zones) drawZone(g, zone, game.tick);
 }
 
-/** A burst that fades where an ability just landed. */
-function drawAbilityCasts(g: Graphics, { game, level }: OverlayView): void {
-  for (const hero of game.heroes) {
-    const cast = hero.lastCast;
-    const ability = cast && level.heroTypes[hero.type].abilities[cast.ability];
-    if (!cast || !ability) continue;
-    const age = game.tick - cast.tick;
-    if (age >= CAST_VISIBLE_TICKS) continue;
-    const fade = 1 - age / CAST_VISIBLE_TICKS;
-    g.fillStyle(HERO_STYLE[hero.type].color, 0.45 * fade);
-    g.fillCircle(cast.x, cast.y, ability.radius);
-    g.lineStyle(3, 0xffffff, 0.8 * fade);
-    g.strokeCircle(cast.x, cast.y, ability.radius);
-  }
+function drawAbilityCasts(g: Graphics, { game, castEffects }: OverlayView): void {
+  for (const effect of castEffects) drawCastEffect(g, effect, game.tick);
 }
 
 /** While aiming: the hero's cast range and the area under the pointer. */
@@ -119,7 +101,12 @@ function drawHeroMarks(g: Graphics, { game, level, selectedHeroId }: OverlayView
     }
     const type = level.heroTypes[hero.type];
     if (hero.id === selectedHeroId) drawSelection(g, hero, type.range);
-    drawShot(g, game, hero, hero.lastShot, type.slowTicks > 0 ? SLOW_COLOR : SHOT_COLOR, type.splashRadius);
+    if (type.blockCount > 0) {
+      drawSlash(g, game, hero, hero.lastShot);
+    } else {
+      const color = type.slowTicks > 0 ? SLOW_COLOR : SHOT_COLOR;
+      drawShot(g, game, hero, hero.lastShot, color, type.splashRadius);
+    }
 
     const heal = hero.lastHeal;
     if (heal && game.tick - heal.tick < SHOT_VISIBLE_TICKS * 2) {
@@ -172,6 +159,31 @@ function drawShot(
     g.fillStyle(SPLASH_COLOR, 0.35);
     g.fillCircle(shot.x, shot.y, splashRadius);
   }
+}
+
+/** A melee hit: a sweep of the blade in front of the hero instead of a shot. */
+function drawSlash(
+  g: Graphics,
+  game: GameState,
+  hero: Point,
+  shot: { tick: number; x: number; y: number } | null,
+): void {
+  if (!shot) return;
+  const age = game.tick - shot.tick;
+  if (age >= SHOT_VISIBLE_TICKS * 2) return;
+  const t = age / (SHOT_VISIBLE_TICKS * 2);
+  const facing = Math.atan2(shot.y - hero.y, shot.x - hero.x);
+  const reach = Math.max(HERO_RADIUS + 8, Math.hypot(shot.x - hero.x, shot.y - hero.y));
+  // The blade sweeps across in front of the hero, leaving a fading trail.
+  const sweep = -0.9 + 1.8 * t;
+  g.lineStyle(5, 0xffffff, 0.9 * (1 - t));
+  g.beginPath();
+  g.arc(hero.x, hero.y, reach, facing - 0.9, facing + sweep);
+  g.strokePath();
+  g.lineStyle(2, 0xffe08a, 1 - t);
+  g.beginPath();
+  g.arc(hero.x, hero.y, reach + 4, facing + sweep - 0.5, facing + sweep);
+  g.strokePath();
 }
 
 function drawSelection(g: Graphics, hero: Hero, range: number): void {
