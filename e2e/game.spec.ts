@@ -222,7 +222,9 @@ test('an ability effect goes away by itself', async ({ page }) => {
   await page.keyboard.press('1');
   await page.keyboard.press('q');
   await expect.poll(playing, { intervals: [30, 60, 100] }).toBe(1);
-  await expect.poll(playing).toBe(0);
+  // The effect lasts a moment of game time. On a machine that draws slowly the
+  // game clock runs slower too, so this allows for much more real time.
+  await expect.poll(playing, { timeout: 20_000 }).toBe(0);
 });
 
 test('defeat is announced and the R key starts a fresh game', async ({ page }) => {

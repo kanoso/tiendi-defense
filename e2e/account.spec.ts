@@ -97,13 +97,13 @@ test('a victory on one device reaches the other one', async ({ browser }) => {
   await phone.evaluate(() => {
     (window as any).__game.scene.getScene('game').game_.phase = 'won';
   });
-  // Saved progress travels to the server shortly after.
-  await phone.waitForTimeout(2000);
-
-  // The computer sees it the next time its menu opens.
-  await computer.reload();
-  await waitForAccountButton(computer);
-  await expect.poll(() => mapStars(computer)).toMatchObject({ meadow: 1, canyon: 3 });
+  // Saved progress travels to the server shortly after; the computer sees it
+  // the next time its menu opens, so it looks again until it is there.
+  await expect(async () => {
+    await computer.reload();
+    await waitForAccountButton(computer);
+    expect(await mapStars(computer)).toMatchObject({ meadow: 1, canyon: 3 });
+  }).toPass({ timeout: 30_000 });
 });
 
 test('the menu button shows the code is in use once the panel is closed', async ({ browser }) => {

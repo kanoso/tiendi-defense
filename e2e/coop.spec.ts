@@ -136,6 +136,8 @@ test('a player cannot select or move a hero that belongs to the other', async ({
 });
 
 test('both players keep the same game through a wave', async ({ browser }) => {
+  // Two whole games run side by side here; a slow machine needs the extra time.
+  test.setTimeout(90_000);
   const { ana, beto } = await startTogether(browser);
   await clickSlot(ana, 1);
   await clickMenuOption(ana, 'Arquería');
