@@ -24,6 +24,11 @@ export interface GameServerOptions {
   autoClock?: boolean;
   /** How long a game with no connected players is kept, in case they return. */
   abandonedRoomMs?: number;
+  /**
+   * Sites, other than the server itself, whose pages may check that it is up:
+   * the published game, for instance, when it lives on another address.
+   */
+  allowedOrigins?: readonly string[];
 }
 
 export interface GameServer {
@@ -236,7 +241,14 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (url.pathname === '/health') {
       const players = [...sockets.values()].reduce((sum, connections) => sum + connections.size, 0);
-      response.writeHead(200, { 'content-type': CONTENT_TYPES['.json'], 'cache-control': 'no-store' });
+      const origin = request.headers.origin;
+      const allowed = origin !== undefined && (options.allowedOrigins ?? []).includes(origin);
+      response.writeHead(200, {
+        'content-type': CONTENT_TYPES['.json'],
+        'cache-control': 'no-store',
+        vary: 'Origin',
+        ...(allowed ? { 'access-control-allow-origin': origin } : {}),
+      });
       response.end(JSON.stringify({ ok: true, rooms: rooms.size, players }));
       return;
     }

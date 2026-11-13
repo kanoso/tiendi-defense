@@ -8,6 +8,9 @@ services:
       dockerfile: deploy/Dockerfile
     image: tower-defense-heroes:latest
     restart: unless-stopped
+    environment:
+      # Sites, besides this server, whose pages may use it. Comma-separated.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
     ports:
       - "${HOST_PORT:-8787}:8787"
     read_only: true

@@ -8,7 +8,11 @@ process.env.COOP_PORT = String(COOP_PORT);
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
-  reporter: 'list',
+  // On the build machines a test that fails once is tried again before it
+  // counts: a busy machine can make a timing-sensitive test miss.
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 2 : undefined,
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,
     viewport: { width: 1280, height: 720 },

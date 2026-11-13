@@ -249,6 +249,31 @@ describe('playing', () => {
 });
 
 describe('serving the game', () => {
+  it('lets a page from an allowed site ask whether the server is up', async () => {
+    await start({ allowedOrigins: ['https://example.github.io'] });
+    const response = await fetch(`http://127.0.0.1:${server.port}/health`, {
+      headers: { origin: 'https://example.github.io' },
+    });
+    expect(response.headers.get('access-control-allow-origin')).toBe('https://example.github.io');
+    expect(response.headers.get('vary')).toContain('Origin');
+  });
+
+  it('does not open the health check to any other site', async () => {
+    await start({ allowedOrigins: ['https://example.github.io'] });
+    const response = await fetch(`http://127.0.0.1:${server.port}/health`, {
+      headers: { origin: 'https://elsewhere.example' },
+    });
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('opens it to no other site unless told to', async () => {
+    await start();
+    const response = await fetch(`http://127.0.0.1:${server.port}/health`, {
+      headers: { origin: 'https://example.github.io' },
+    });
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
   it('answers a health check', async () => {
     await start();
     const response = await fetch(`http://127.0.0.1:${server.port}/health`);
