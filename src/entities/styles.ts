@@ -1,5 +1,6 @@
 import type { CastEffectKind } from './abilityEffects';
 import type { SpriteName } from './sprites';
+import type { UnitName } from './units';
 
 // How things look and what they are called on screen. No game rules here.
 
@@ -9,7 +10,7 @@ export const PATH_WIDTH = 46;
 export const HERO_RADIUS = 15;
 export const SLOT_RADIUS = 18;
 
-/** The sprites are 16 px tiles; these are how many times larger they are drawn. */
+/** The sprites are 16 px pixel art; these are how many times larger they are drawn. */
 export const HERO_SCALE = 2;
 export const TOWER_BASE_SCALE = 2.25;
 export const TOWER_ICON_SCALE = 1.5;
@@ -26,13 +27,16 @@ export const HEAL_COLOR = 0x7dff9b;
 export const STORM_COLOR = 0xd980fa;
 export const SELECTION_COLOR = 0xffe066;
 
-/** `radius` is the size of the enemy for rings and health bars, in map pixels. */
-export const ENEMY_STYLE: Record<string, { radius: number; sprite: SpriteName; scale: number }> = {
+/**
+ * `radius` is the size of the enemy for rings and health bars, in map pixels.
+ * Every enemy is drawn twice as large: the boss's art is already the biggest.
+ */
+export const ENEMY_STYLE: Record<string, { radius: number; sprite: UnitName; scale: number }> = {
   soldier: { radius: 13, sprite: 'enemy-soldier', scale: 2 },
-  runner: { radius: 10, sprite: 'enemy-runner', scale: 1.5 },
+  runner: { radius: 10, sprite: 'enemy-runner', scale: 2 },
   armored: { radius: 14, sprite: 'enemy-armored', scale: 2 },
-  flyer: { radius: 11, sprite: 'enemy-flyer', scale: 1.5 },
-  boss: { radius: 22, sprite: 'enemy-boss', scale: 3 },
+  flyer: { radius: 11, sprite: 'enemy-flyer', scale: 2 },
+  boss: { radius: 22, sprite: 'enemy-boss', scale: 2 },
 };
 
 /** Keys that trigger a hero's abilities, in the order the hero type lists them. */
@@ -44,7 +48,7 @@ export const ABILITY_KEYS = ['Q', 'W'];
  */
 export const HERO_STYLE: Record<
   string,
-  { color: number; sprite: SpriteName; name: string; abilities: string[]; effects: CastEffectKind[] }
+  { color: number; sprite: UnitName; name: string; abilities: string[]; effects: CastEffectKind[] }
 > = {
   warrior: {
     color: 0xe8edf2,

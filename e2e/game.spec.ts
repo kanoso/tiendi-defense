@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { HERO_SCALE } from '../src/entities/styles';
+import { headRise, HIT_FLASH_TICKS, HIT_FRAME, UNIT_SHEETS } from '../src/entities/units';
 import {
   clickMap,
   clickMenuOption,
@@ -93,6 +95,70 @@ test('a number key selects a hero and a click on the map sends it there', async 
     .poll(async () => Math.abs((await snapshot(page)).heroes[1].targetX - GRASS.x))
     .toBeLessThan(2);
   expect(Math.abs((await snapshot(page)).heroes[1].targetY - GRASS.y)).toBeLessThan(2);
+});
+
+test("a click on the very top of a hero's head selects it", async ({ page }) => {
+  await page.keyboard.press('2');
+  const hero = await page.evaluate(() => {
+    const warrior = (window as any).__game.scene.getScene('game').game_.heroes[0];
+    return { x: warrior.x, y: warrior.y };
+  });
+  // The knight stands on its feet; its helmet reaches higher than its circle.
+  await clickMap(page, hero.x, hero.y - headRise(UNIT_SHEETS['hero-warrior'], HERO_SCALE) + 1);
+  await expect.poll(async () => (await snapshot(page)).selectedHeroId).toBe(1);
+  // Selecting is not moving.
+  const warrior = (await snapshot(page)).heroes[0];
+  expect({ x: warrior.targetX, y: warrior.targetY }).toEqual({ x: hero.x, y: hero.y });
+});
+
+/** The frame each hero's sprite shows, in hero order. */
+function heroFrames(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const scene = (window as any).__game.scene.getScene('game');
+    return [...scene.heroViews.values()].map((view: any) => String(view.body.frame.name)).join(',');
+  });
+}
+
+function enemyFrames(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const scene = (window as any).__game.scene.getScene('game');
+    return [...scene.enemyViews.values()].map((view: any) => String(view.sprite.frame.name)).join(',');
+  });
+}
+
+test('heroes and enemies hold their animation frame while the game is paused', async ({ page }) => {
+  await page.keyboard.press('Space');
+  // Generous: a slow machine runs the game slower, and enemies come in game time.
+  await expect.poll(async () => (await snapshot(page)).enemies, { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
+
+  await page.keyboard.press('P');
+  await expect.poll(async () => (await snapshot(page)).paused).toBe(true);
+  const still = { heroes: await heroFrames(page), enemies: await enemyFrames(page), tick: (await snapshot(page)).tick };
+  await page.waitForTimeout(500);
+  expect({ heroes: await heroFrames(page), enemies: await enemyFrames(page), tick: (await snapshot(page)).tick }).toEqual(
+    still,
+  );
+
+  // Only the heroes: an enemy arriving or leaving would change the enemy frames anyway.
+  await page.keyboard.press('P');
+  await expect.poll(() => heroFrames(page), { timeout: 30_000 }).not.toBe(still.heroes);
+});
+
+test('a hero that loses health flashes its hit frame, then goes back to its loop', async ({ page }) => {
+  const warriorFrame = async () => (await heroFrames(page)).split(',')[0];
+  // Paused, so the flash cannot come and go between two looks.
+  await page.keyboard.press('P');
+  await expect.poll(async () => (await snapshot(page)).paused).toBe(true);
+  const hitTick = await page.evaluate(() => {
+    const scene = (window as any).__game.scene.getScene('game');
+    scene.game_.heroes[0].hp -= 10;
+    return scene.game_.tick;
+  });
+  await expect.poll(warriorFrame).toBe(String(HIT_FRAME));
+
+  await page.keyboard.press('P');
+  await expect.poll(warriorFrame, { timeout: 30_000 }).not.toBe(String(HIT_FRAME));
+  expect((await snapshot(page)).tick - hitTick).toBeGreaterThanOrEqual(HIT_FLASH_TICKS);
 });
 
 test('a locked ability does not fire and says when it unlocks', async ({ page }) => {

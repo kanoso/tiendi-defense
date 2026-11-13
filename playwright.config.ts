@@ -23,6 +23,8 @@ if (!existsSync(E2E_GOOGLE_PRIVATE_KEY)) {
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
+  // A `test.only` left in by mistake must not quietly skip the rest on the build machines.
+  forbidOnly: !!process.env.CI,
   // On the build machines a test that fails once is tried again before it
   // counts: a busy machine can make a timing-sensitive test miss.
   retries: process.env.CI ? 2 : 0,

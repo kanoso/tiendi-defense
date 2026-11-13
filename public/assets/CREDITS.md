@@ -2,19 +2,40 @@
 
 ## Sprites
 
-Los archivos de `sprites/` provienen de dos paquetes de **Kenney** (www.kenney.nl):
-
-- **Tiny Dungeon** (1.0): héroes, enemigos e iconos de las torres de hielo y arcana.
-- **Tiny Town**: terreno, árboles, base de las torres e iconos de arquería y cañón.
-
-Licencia: [Creative Commons Zero (CC0)](http://creativecommons.org/publicdomain/zero/1.0/).
+Los archivos de `sprites/` provienen de tres paquetes, todos con licencia
+[Creative Commons Zero (CC0)](http://creativecommons.org/publicdomain/zero/1.0/).
 Se pueden usar en proyectos personales, educativos y comerciales. El crédito no es
 obligatorio; se incluye como agradecimiento.
 
-Los paquetes se descargaron de OpenGameArt:
+Dos son de **Kenney** (www.kenney.nl), descargados de OpenGameArt:
 
-- https://opengameart.org/content/tiny-dungeon
-- https://opengameart.org/content/tiny-town
+- **Tiny Dungeon** (1.0): iconos de las torres de hielo y arcana.
+  https://opengameart.org/content/tiny-dungeon
+- **Tiny Town**: terreno, árboles, base de las torres e iconos de arquería y cañón.
+  https://opengameart.org/content/tiny-town
+
+Los héroes y los enemigos son del paquete **16x16 DungeonTileset II** (versión 1.7),
+de **0x72**: https://0x72.itch.io/dungeontileset-ii
+
+Cada archivo es una tira horizontal con los cuadros de animación de un personaje,
+separados por 1 píxel transparente: primero los 4 cuadros de reposo (`idle_anim_f0`
+a `f3`), luego los 4 de carrera (`run_anim_f0` a `f3`) y, si el personaje lo tiene,
+el cuadro de golpe (`hit_anim_f0`).
+
+| Archivo del juego | Personaje original | Tamaño de cada cuadro | Cuadro de golpe |
+|---|---|---|---|
+| `hero-warrior.png` | `knight_m` | 16 × 28 | Sí |
+| `hero-mage.png` | `wizzard_m` | 16 × 28 | Sí |
+| `hero-archer.png` | `elf_f` | 16 × 28 | Sí |
+| `hero-support.png` | `doc` | 16 × 23 | No |
+| `enemy-soldier.png` | `orc_warrior` | 16 × 23 | No |
+| `enemy-runner.png` | `goblin` | 16 × 16 | No |
+| `enemy-armored.png` | `masked_orc` | 16 × 23 | No |
+| `enemy-flyer.png` | `imp` | 16 × 16 | No |
+| `enemy-boss.png` | `big_demon` | 32 × 36 | No |
+
+Si se cambia el tamaño de los cuadros o su cantidad, hay que actualizar
+`UNIT_SHEETS` en `src/entities/units.ts`; una prueba comprueba que coincidan.
 
 Solo se copiaron los sprites que el juego usa, renombrados según su función.
 

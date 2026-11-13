@@ -5,6 +5,7 @@ import {
   ENEMY_STYLE,
   HEAL_COLOR,
   HERO_RADIUS,
+  HERO_SCALE,
   HERO_STYLE,
   SELECTION_COLOR,
   SHOT_COLOR,
@@ -14,6 +15,7 @@ import {
   STUN_COLOR,
 } from './styles';
 import { drawCastEffect, drawZone, type CastEffect } from './abilityEffects';
+import { headRise, UNIT_SHEETS } from './units';
 
 type Graphics = Phaser.GameObjects.Graphics;
 
@@ -34,7 +36,7 @@ export interface OverlayView {
   /** Abilities cast a moment ago, still playing their effect. */
   castEffects: readonly CastEffect[];
   pointer: Point;
-  /** Where each enemy is drawn this frame, by enemy id. */
+  /** Where the middle of each enemy's body is drawn this frame, by enemy id. */
   enemyPositions: ReadonlyMap<number, Point>;
 }
 
@@ -115,7 +117,11 @@ function drawHeroMarks(g: Graphics, { game, level, selectedHeroId }: OverlayView
       g.strokeCircle(heal.x, heal.y, HERO_RADIUS + 8);
     }
     const maxHp = heroMaxHp(level, hero);
-    if (hero.hp < maxHp) drawHealthBar(g, hero, HERO_RADIUS, hero.hp / maxHp, 0x4aa3ff);
+    if (hero.hp < maxHp) {
+      // Above the head, which can reach higher than the hero's circle.
+      const above = Math.max(HERO_RADIUS, headRise(UNIT_SHEETS[HERO_STYLE[hero.type].sprite], HERO_SCALE));
+      drawHealthBar(g, hero, HERO_RADIUS, above, hero.hp / maxHp, 0x4aa3ff);
+    }
   }
 }
 
@@ -123,7 +129,8 @@ function drawEnemyMarks(g: Graphics, { game, enemyPositions }: OverlayView): voi
   for (const enemy of game.enemies) {
     const position = enemyPositions.get(enemy.id);
     if (!position) continue;
-    const radius = ENEMY_STYLE[enemy.type].radius;
+    const style = ENEMY_STYLE[enemy.type];
+    const radius = style.radius;
     if (enemy.stunTicks > 0) {
       g.lineStyle(3, STUN_COLOR, 0.95);
       g.strokeCircle(position.x, position.y, radius + 3);
@@ -132,7 +139,8 @@ function drawEnemyMarks(g: Graphics, { game, enemyPositions }: OverlayView): voi
       g.strokeCircle(position.x, position.y, radius + 3);
     }
     if (enemy.hp < enemy.maxHp) {
-      drawHealthBar(g, position, radius, enemy.hp / enemy.maxHp, 0x6fcf4a);
+      const halfBody = (UNIT_SHEETS[style.sprite].bodyRows * style.scale) / 2;
+      drawHealthBar(g, position, radius, Math.max(radius, halfBody), enemy.hp / enemy.maxHp, 0x6fcf4a);
     }
   }
 }
@@ -208,10 +216,11 @@ function drawRespawnProgress(g: Graphics, level: Level, hero: Hero): void {
   g.strokePath();
 }
 
-function drawHealthBar(g: Graphics, at: Point, radius: number, fraction: number, color: number): void {
+/** `radius` sets the width; the bar sits `above` px higher than `at`, plus a small gap. */
+function drawHealthBar(g: Graphics, at: Point, radius: number, above: number, fraction: number, color: number): void {
   const width = radius * 2 + 4;
   const left = at.x - width / 2;
-  const top = at.y - radius - 9;
+  const top = at.y - above - 9;
   g.fillStyle(0x1b1b1b, 0.85);
   g.fillRect(left - 1, top - 1, width + 2, 6);
   g.fillStyle(color, 1);

@@ -18,7 +18,7 @@ Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11
 **Diferencias con lo planeado en la fase 2**
 
 - **Música:** no entró en la fase 2. Se agregó después: una pista en bucle (detalle en la sección 10).
-- **Animaciones:** los sprites son de una sola imagen. El movimiento se resuelve con un salto al caminar y el giro hacia donde avanzan, no con cuadros de animación.
+- **Animaciones:** al principio los sprites eran de una sola imagen y el movimiento se resolvía con un salto al caminar. Después se reemplazaron héroes y enemigos por personajes animados del paquete DungeonTileset II de 0x72 (CC0): cada uno tiene un ciclo de reposo y uno de carrera, y los héroes que lo traen muestran un cuadro de golpe al recibir daño. Los cuadros avanzan con el reloj de la partida, así que se detienen con la pausa y se aceleran con la velocidad x2. Siguen mirando hacia donde avanzan. Es solo dibujo: la simulación no cambia.
 - **Agregado:** pausa (`P`), que figuraba en los controles pero no en ninguna fase.
 - **Agregado:** el guerrero suelta a un enemigo menor para frenar a uno más peligroso. Sin esa regla los jefes pasaban sin ser atacados.
 
@@ -230,7 +230,7 @@ De 2 a 4 jugadores defienden juntos el mismo mapa.
 ## 10. Decisiones pendientes
 
 - Ambientación y nombres de los 4 héroes.
-- ~~Origen del arte~~ — resuelto: paquetes de Kenney con licencia CC0 (detalle en `public/assets/CREDITS.md`). Se puede reemplazar por arte propio sin tocar la lógica.
+- ~~Origen del arte~~ — resuelto: paquetes de Kenney y, para héroes y enemigos, de 0x72, todos con licencia CC0 (detalle en `public/assets/CREDITS.md`). Se puede reemplazar por arte propio sin tocar la lógica.
 - ~~Música de fondo~~ — resuelto: «JRPG Epic Rock Battle Theme #1» de HydroGene (CC0), en bucle, al 12 % del volumen elegido.
 - ~~Si el juego debe funcionar en móvil desde el MVP o recién en la fase 4~~ — resuelto: en la fase 4 (controles táctiles, aviso para girar el teléfono, instalable en la pantalla de inicio).
 - ~~Fase 5: servidor autoritativo o conexión directa entre navegadores~~ — resuelto: servidor propio que reparte las órdenes por turnos de 50 ms; cada navegador simula la misma partida y el servidor guarda la copia de referencia, que envía completa si alguno se desvía o se reconecta.

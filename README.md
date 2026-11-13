@@ -127,5 +127,6 @@ El alcance, las fases y el avance están en [`DOCS/ALCANCE.md`](DOCS/ALCANCE.md)
 
 ## Créditos
 
-Los sprites y los sonidos son de [Kenney](https://www.kenney.nl), con licencia
-CC0. El detalle está en [`public/assets/CREDITS.md`](public/assets/CREDITS.md).
+Los sonidos y el terreno son de [Kenney](https://www.kenney.nl); los héroes y los
+enemigos animados, de [0x72](https://0x72.itch.io/dungeontileset-ii). Todo con
+licencia CC0. El detalle está en [`public/assets/CREDITS.md`](public/assets/CREDITS.md).

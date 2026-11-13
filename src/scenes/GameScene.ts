@@ -29,6 +29,16 @@ import { blockedOffsets } from '../entities/crowd';
 import { drawOverlay, type Aim } from '../entities/overlay';
 import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
 import {
+  bodyCenterRise,
+  FOOT_DROP,
+  tapsUnit,
+  ticksSinceHit,
+  trackHit,
+  UNIT_SHEETS,
+  unitFrame,
+  type HitMemory,
+} from '../entities/units';
+import {
   ABILITY_KEYS,
   ENEMY_STYLE,
   FONT,
@@ -98,6 +108,8 @@ interface HeroView {
   label: Phaser.GameObjects.Text;
   /** Where it was last frame, to face the way it walks. */
   lastX: number;
+  /** Health last frame and the tick it last dropped, to flash the hit frame. */
+  hits: HitMemory;
 }
 
 interface EnemyView {
@@ -147,7 +159,7 @@ export class GameScene extends Phaser.Scene {
   private aim: Aim | null = null;
 
   private enemyViews = new Map<number, EnemyView>();
-  /** Where each enemy is drawn this frame, for the marks drawn around it. */
+  /** Where the middle of each enemy's body is drawn this frame, for the marks drawn around it. */
   private enemyPositions = new Map<number, Point>();
   private heroViews = new Map<number, HeroView>();
   private towerViews = new Map<number, TowerView>();
@@ -350,6 +362,9 @@ export class GameScene extends Phaser.Scene {
       this.shownCasts.clear();
       for (const hero of snapshot.heroes) {
         if (hero.lastCast) this.shownCasts.set(hero.id, hero.lastCast.tick);
+        // Health that differs from this copy's is a correction, not a hit.
+        const view = this.heroViews.get(hero.id);
+        if (view) view.hits = { hp: hero.hp, hitTick: null };
       }
       this.coopClock = 0;
     }
@@ -585,8 +600,9 @@ export class GameScene extends Phaser.Scene {
       this.sounds.play('menu');
       return;
     }
-    const clicked = this.game_.heroes.find(
-      (hero) => Math.hypot(hero.x - x, hero.y - y) <= HERO_RADIUS + TAP_MARGIN,
+    // The drawn hero can reach higher than its circle; its head counts too.
+    const clicked = this.game_.heroes.find((hero) =>
+      tapsUnit({ x, y }, hero, UNIT_SHEETS[HERO_STYLE[hero.type].sprite], HERO_SCALE, HERO_RADIUS, TAP_MARGIN),
     );
     if (clicked) {
       this.selectHero(clicked.id);
@@ -740,11 +756,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   // --- sprites -----------------------------------------------------------
+  // Heroes and enemies stand with their feet `FOOT_DROP` below their map point.
+  // Their frames follow game ticks (see `unitFrame`), so they freeze with a pause.
 
   private createHeroViews(): void {
     for (const hero of this.game_.heroes) {
       const body = this.add
-        .image(hero.x, hero.y, HERO_STYLE[hero.type].sprite)
+        .image(hero.x, hero.y + FOOT_DROP, HERO_STYLE[hero.type].sprite, 0)
+        .setOrigin(0.5, 1)
         .setScale(HERO_SCALE)
         .setDepth(3);
       // The number matches the key that selects the hero.
@@ -759,21 +778,23 @@ export class GameScene extends Phaser.Scene {
         })
         .setOrigin(0.5)
         .setDepth(3);
-      this.heroViews.set(hero.id, { body, label, lastX: hero.x });
+      this.heroViews.set(hero.id, { body, label, lastX: hero.x, hits: { hp: hero.hp, hitTick: null } });
     }
   }
 
   private syncHeroes(): void {
+    const tick = this.game_.tick;
     for (const hero of this.game_.heroes) {
       const view = this.heroViews.get(hero.id);
       if (!view) continue;
       // A fallen hero waits, faded, at its spawn point.
       const alpha = isAlive(hero) ? 1 : 0.3;
-      // A small hop while walking, timed by game ticks so it stops with a pause.
-      const hop = isMoving(hero) ? Math.abs(Math.sin(this.game_.tick / 5)) * 3 : 0;
+      view.hits = trackHit(view.hits, hero.hp, tick);
+      const pose = { moving: isAlive(hero) && isMoving(hero), ticksSinceHit: ticksSinceHit(view.hits, tick) };
+      const frame = unitFrame(UNIT_SHEETS[HERO_STYLE[hero.type].sprite], pose, tick, hero.id);
       if (hero.x !== view.lastX) view.body.setFlipX(hero.x < view.lastX);
       view.lastX = hero.x;
-      view.body.setPosition(hero.x, hero.y - hop).setAlpha(alpha);
+      view.body.setFrame(frame).setPosition(hero.x, hero.y + FOOT_DROP).setAlpha(alpha);
       view.label.setPosition(hero.x + 13, hero.y + 12).setAlpha(alpha);
     }
   }
@@ -797,7 +818,7 @@ export class GameScene extends Phaser.Scene {
       const flying = this.level.enemyTypes[enemy.type].flying;
       let view = this.enemyViews.get(enemy.id);
       if (!view) {
-        const sprite = this.add.image(0, 0, style.sprite).setScale(style.scale).setDepth(2);
+        const sprite = this.add.image(0, 0, style.sprite, 0).setOrigin(0.5, 1).setScale(style.scale).setDepth(2);
         // Flyers cast a shadow on the ground, so their height reads at a glance.
         const shadow = flying
           ? this.add.ellipse(0, 0, style.radius * 1.6, style.radius * 0.7, 0x000000, 0.28).setDepth(1)
@@ -814,17 +835,22 @@ export class GameScene extends Phaser.Scene {
       view.offset.y += (target.y - view.offset.y) * 0.2;
       const ground = { x: onRoad.x + view.offset.x, y: onRoad.y + view.offset.y };
 
-      // Walkers bob as they step; flyers hover above their shadow.
-      const beat = this.game_.tick / 6 + enemy.id;
-      const lift = flying ? 16 + Math.sin(beat / 2) * 3 : stopped ? 0 : Math.abs(Math.sin(beat)) * 2;
+      // Walkers step through their run frames; flyers also hover above their shadow.
+      const sheet = UNIT_SHEETS[style.sprite];
+      const lift = flying ? 16 + Math.sin((this.game_.tick / 6 + enemy.id) / 2) * 3 : 0;
+      const pose = { moving: !stopped, ticksSinceHit: null };
       // Facing follows the road, not the sideways shuffle into the crowd.
       if (view.lastX !== Number.NEGATIVE_INFINITY && onRoad.x !== view.lastX) {
         view.sprite.setFlipX(onRoad.x < view.lastX);
       }
       view.lastX = onRoad.x;
-      view.sprite.setPosition(ground.x, ground.y - lift);
-      view.shadow?.setPosition(ground.x, ground.y + style.radius * 0.6);
-      this.enemyPositions.set(enemy.id, { x: ground.x, y: ground.y - lift });
+      view.sprite
+        .setFrame(unitFrame(sheet, pose, this.game_.tick, enemy.id))
+        .setPosition(ground.x, ground.y + FOOT_DROP - lift);
+      // The shadow lies where the feet would stand.
+      view.shadow?.setPosition(ground.x, ground.y + FOOT_DROP - 2);
+      // Rings and health bars go around the drawn body.
+      this.enemyPositions.set(enemy.id, { x: ground.x, y: ground.y - lift - bodyCenterRise(sheet, style.scale) });
     }
     for (const [id, view] of this.enemyViews) {
       if (!alive.has(id)) {

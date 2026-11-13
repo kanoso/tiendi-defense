@@ -10,7 +10,7 @@ import { openAccountPanel } from '../ui/accountPanel';
 import { continueLabel, type SavedGame } from '../progress/savedGame';
 import { latestSavedGame, localSavedGame } from '../progress/savedGameSync';
 import { clearTicket, loadTicket, tabStore } from '../net/rejoinTicket';
-import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
+import { createIdleAnimations, idleAnimation, keepSpritesCrisp, loadSprites } from '../entities/sprites';
 import { FONT, GROUND_SCALE, HERO_STYLE, SELECTION_COLOR } from '../entities/styles';
 import {
   availableStars,
@@ -134,6 +134,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     keepSpritesCrisp(this);
+    createIdleAnimations(this);
     this.add
       .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, 'grass')
       .setOrigin(0)
@@ -448,7 +449,12 @@ export class MenuScene extends Phaser.Scene {
     const style = HERO_STYLE[tile.heroType];
     this.panel(centerX, HERO_TOP + HERO_HEIGHT / 2, HERO_WIDTH, HERO_HEIGHT, false);
 
-    this.add.image(centerX - 66, HERO_TOP + 36, style.sprite).setScale(3);
+    // Standing on its feet, so the taller heroes grow upwards and stay inside the panel.
+    this.add
+      .sprite(centerX - 66, HERO_TOP + 71, style.sprite, 0)
+      .setOrigin(0.5, 1)
+      .setScale(3)
+      .play(idleAnimation(style.sprite));
     this.add
       .text(centerX - 34, HERO_TOP + 14, style.name, {
         fontFamily: FONT,
