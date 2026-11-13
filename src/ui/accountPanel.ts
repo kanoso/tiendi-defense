@@ -1,13 +1,22 @@
 import { CloudError, type ProgressCloud } from '../progress/cloud';
-import { adoptProgress, syncState, watchSyncState } from '../progress/cloudSync';
+import {
+  accountName,
+  adoptProgress,
+  rememberAccountName,
+  syncState,
+  watchSyncState,
+} from '../progress/cloudSync';
 import { loadProgress } from '../progress/storage';
+import { forgetGoogleChoice, renderGoogleButton } from './googleButton';
 
-// The panel where a player gets a code to keep their progress, or types one
-// they already have. Plain page elements, like the co-op lobby, because it
-// needs a real text field.
+// The panel where a player keeps their progress on the server: with a Google
+// account, or with a player code for those who prefer not to. Plain page
+// elements, like the co-op lobby, because it needs real text fields.
 
 export interface AccountPanelOptions {
   cloud: ProgressCloud;
+  /** Google's client id for this game, or null when signing in with Google is not offered. */
+  googleClientId: string | null;
   /** The progress on this device changed: what is on screen must be redrawn. */
   onProgressChanged: () => void;
   onClose: () => void;
@@ -33,6 +42,9 @@ const STYLE = `
 #account button:disabled { opacity: 0.5; cursor: default; }
 #account .big-code { margin: 6px 0; font-size: 36px; font-weight: 700; letter-spacing: 0.12em;
   text-align: center; color: #ffe066; user-select: all; -webkit-user-select: all; }
+#account .who { margin: 8px 0; font-size: 18px; font-weight: 600; text-align: center; }
+#account .google { display: flex; justify-content: center; min-height: 44px; margin-top: 12px; }
+#account .or { margin: 16px 0 0; font-size: 13px; color: #a9b3a0; text-align: center; }
 #account .hint { font-size: 13px; color: #a9b3a0; }
 #account .status { font-size: 13px; color: #7dff9b; text-align: center; min-height: 1.4em; }
 #account .error { min-height: 1.4em; margin-top: 10px; color: #ff9d8a; }
@@ -44,7 +56,8 @@ const STYLE = `
   #account .big-code { margin: 2px 0; font-size: 26px; }
   #account label { margin: 6px 0 2px; }
   #account input { padding: 7px; }
-  #account .row { margin-top: 6px; }
+  #account .row, #account .google { margin-top: 6px; }
+  #account .or { margin-top: 6px; }
   #account button { padding: 8px; }
 }
 `;
@@ -52,6 +65,7 @@ const STYLE = `
 const ERRORS: Record<string, string> = {
   'invalid-code': 'El código tiene 8 letras y números, como KXT4-9QPM.',
   'unknown-code': 'No hay ningún avance con ese código. Revisa que esté bien escrito.',
+  'google-refused': 'Google no confirmó la cuenta. Prueba de nuevo.',
   offline: 'No se pudo conectar con el servidor. Prueba de nuevo en un momento.',
   busy: 'Demasiados intentos. Espera unos minutos y vuelve a probar.',
   refused: 'El servidor no aceptó el pedido. Prueba de nuevo.',
@@ -72,6 +86,7 @@ export function openAccountPanel(options: AccountPanelOptions): void {
   root.append(card);
   document.body.append(root);
 
+  const { cloud } = options;
   let busy = false;
   let errorText = '';
 
@@ -97,6 +112,12 @@ export function openAccountPanel(options: AccountPanelOptions): void {
     return node;
   }
 
+  function row(...buttons: HTMLButtonElement[]): HTMLDivElement {
+    const node = element('div', '', 'row');
+    node.append(...buttons);
+    return node;
+  }
+
   /** Runs a request to the server, showing the outcome. */
   async function attempt(work: () => Promise<void>): Promise<void> {
     busy = true;
@@ -111,38 +132,70 @@ export function openAccountPanel(options: AccountPanelOptions): void {
     render();
   }
 
+  /** Google's button, which signs in and joins what this device has into the account. */
+  function googleButton(): HTMLElement | null {
+    if (!options.googleClientId) return null;
+    const holder = element('div', '', 'google');
+    holder.id = 'account-google';
+    renderGoogleButton(
+      holder,
+      options.googleClientId,
+      (credential) =>
+        void attempt(async () => {
+          const { name, progress } = await cloud.signInWithGoogle(credential, loadProgress());
+          rememberAccountName(name);
+          adoptProgress(progress);
+          options.onProgressChanged();
+        }),
+      () => {
+        holder.textContent = 'No se pudo cargar el acceso con Google.';
+        holder.className = 'hint';
+      },
+    );
+    return holder;
+  }
+
   function render(): void {
     card.replaceChildren();
-    const code = options.cloud.code();
-    if (code) showCode(code);
+    if (cloud.signedInWithGoogle()) showGoogleAccount();
+    else if (cloud.code()) showCode(cloud.code()!);
     else showChoices();
     const error = element('div', errorText, 'error');
     error.id = 'account-error';
     card.append(error);
   }
 
+  // --- nothing yet: Google, a new code, or a code already made ----------------
+
   function showChoices(): void {
     card.append(element('h2', 'Guardar avance'));
+    const google = googleButton();
     card.append(
       element(
         'p',
-        'Te damos un código para guardar tus estrellas, rangos y récords, y seguir en otro dispositivo. No pedimos nombre ni email.',
+        google
+          ? 'Guarda tus estrellas, rangos y récords para seguir en cualquier dispositivo.'
+          : 'Te damos un código para guardar tus estrellas, rangos y récords, y seguir en otro dispositivo. No pedimos nombre ni email.',
       ),
     );
-    const create = element('div', '', 'row');
-    create.append(
-      button(
-        'account-create',
-        'Crear mi código',
-        () =>
-          void attempt(async () => {
-            const { progress } = await options.cloud.create(loadProgress());
-            adoptProgress(progress);
-          }),
-        true,
+    if (google) {
+      card.append(google);
+      card.append(element('div', 'O sin cuenta, con un código de jugador:', 'or'));
+    }
+    card.append(
+      row(
+        button(
+          'account-create',
+          'Crear mi código',
+          () =>
+            void attempt(async () => {
+              const { progress } = await cloud.create(loadProgress());
+              adoptProgress(progress);
+            }),
+          !google,
+        ),
       ),
     );
-    card.append(create);
 
     card.append(element('label', '¿Ya tienes un código?'));
     const input = element('input');
@@ -152,19 +205,21 @@ export function openAccountPanel(options: AccountPanelOptions): void {
     input.autocapitalize = 'characters';
     input.placeholder = 'XXXX-XXXX';
     card.append(input);
-    const link = element('div', '', 'row');
-    link.append(
-      button('account-link', 'Usar este código', () =>
-        void attempt(async () => {
-          const joined = await options.cloud.link(input.value, loadProgress());
-          adoptProgress(joined);
-          options.onProgressChanged();
-        }),
+    card.append(
+      row(
+        button('account-link', 'Usar este código', () =>
+          void attempt(async () => {
+            const joined = await cloud.link(input.value, loadProgress());
+            adoptProgress(joined);
+            options.onProgressChanged();
+          }),
+        ),
+        button('account-close', 'Cerrar', close),
       ),
-      button('account-close', 'Cerrar', close),
     );
-    card.append(link);
   }
+
+  // --- a player code ------------------------------------------------------------
 
   function showCode(code: string): void {
     card.append(element('h2', 'Tu código'));
@@ -178,28 +233,63 @@ export function openAccountPanel(options: AccountPanelOptions): void {
         'hint',
       ),
     );
-    const status = element('div', describeSync(), 'status');
-    status.id = 'account-status';
-    card.append(status);
+    card.append(status());
 
-    const actions = element('div', '', 'row');
-    const copy = button('account-copy', 'Copiar', () => {
-      void navigator.clipboard?.writeText(code).then(
-        () => (copy.textContent = 'Copiado'),
-        () => (copy.textContent = 'No se pudo copiar'),
-      );
-    }, true);
-    actions.append(copy, button('account-close', 'Cerrar', close));
-    card.append(actions);
-    const forget = element('div', '', 'row');
-    forget.append(
-      button('account-forget', 'Dejar de usarlo en este dispositivo', () => {
-        if (!window.confirm('Este dispositivo dejará de guardar en ese código. Tu avance sigue guardado en él. ¿Continuar?')) return;
-        options.cloud.forget();
-        render();
-      }),
+    const copy = button(
+      'account-copy',
+      'Copiar',
+      () => {
+        void navigator.clipboard?.writeText(code).then(
+          () => (copy.textContent = 'Copiado'),
+          () => (copy.textContent = 'No se pudo copiar'),
+        );
+      },
+      true,
     );
-    card.append(forget);
+    card.append(row(copy, button('account-close', 'Cerrar', close)));
+
+    const google = googleButton();
+    if (google) {
+      card.append(element('div', 'Pásalo a tu cuenta de Google y no dependas del código:', 'or'));
+      card.append(google);
+    }
+    card.append(
+      row(
+        button('account-forget', 'Dejar de usarlo en este dispositivo', () => {
+          if (!window.confirm('Este dispositivo dejará de guardar en ese código. Tu avance sigue guardado en él. ¿Continuar?')) return;
+          cloud.forget();
+          render();
+        }),
+      ),
+    );
+  }
+
+  // --- signed in with Google --------------------------------------------------------
+
+  function showGoogleAccount(): void {
+    card.append(element('h2', 'Tu cuenta'));
+    const who = element('div', `Conectado con Google${accountName() ? ` como ${accountName()}` : ''}`, 'who');
+    who.id = 'account-who';
+    card.append(who);
+    card.append(element('p', 'Tu avance se guarda solo. En otro dispositivo, entra con la misma cuenta.', 'hint'));
+    card.append(status());
+    card.append(
+      row(
+        button('account-close', 'Cerrar', close, true),
+        button('account-sign-out', 'Cerrar sesión', () => {
+          if (!window.confirm('Este dispositivo dejará de guardar en tu cuenta. Tu avance sigue en ella. ¿Cerrar sesión?')) return;
+          forgetGoogleChoice();
+          rememberAccountName(null);
+          void cloud.signOut().then(render);
+        }),
+      ),
+    );
+  }
+
+  function status(): HTMLElement {
+    const node = element('div', describeSync(), 'status');
+    node.id = 'account-status';
+    return node;
   }
 
   function describeSync(): string {
@@ -214,8 +304,8 @@ export function openAccountPanel(options: AccountPanelOptions): void {
   }
 
   watchSyncState(() => {
-    const status = document.getElementById('account-status');
-    if (status) status.textContent = describeSync();
+    const node = document.getElementById('account-status');
+    if (node) node.textContent = describeSync();
   });
   render();
 }

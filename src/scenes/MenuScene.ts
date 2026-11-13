@@ -209,7 +209,7 @@ export class MenuScene extends Phaser.Scene {
     this.label(x, 30, 'Cooperativo', 15, '#ffe066', true);
     this.coopButton = { x, y: 30 };
 
-    if (features.accounts) await this.offerAccount(server);
+    if (features.accounts) await this.offerAccount(server, features.googleClientId);
   }
 
   /**
@@ -217,9 +217,9 @@ export class MenuScene extends Phaser.Scene {
    * use, the progress is brought up to date first: another device may have
    * earned something since.
    */
-  private async offerAccount(server: string): Promise<void> {
+  private async offerAccount(server: string, googleClientId: string | null): Promise<void> {
     const cloud = startCloudSync(server);
-    if (cloud.code() && (await syncNow()) && this.scene.isActive()) {
+    if (cloud.linked() && (await syncNow()) && this.scene.isActive()) {
       this.scene.restart();
       return;
     }
@@ -233,19 +233,21 @@ export class MenuScene extends Phaser.Scene {
       if (keyboard) keyboard.enabled = false;
       this.input.enabled = false;
       let changed = false;
-      const codeBefore = cloud.code();
+      const linkBefore = cloud.linkLabel();
       openAccountPanel({
         cloud,
+        googleClientId,
         onProgressChanged: () => (changed = true),
         onClose: () => {
           if (keyboard) keyboard.enabled = true;
           this.input.enabled = true;
           // Stars from another device, or a code made or dropped, change what the menu shows.
-          if (changed || cloud.code() !== codeBefore) this.scene.restart();
+          if (changed || cloud.linkLabel() !== linkBefore) this.scene.restart();
         },
       });
     });
-    this.label(x, y, cloud.code() ? 'Mi código' : 'Guardar avance', 15, '#f4f1e8', true);
+    const label = cloud.signedInWithGoogle() ? 'Mi cuenta' : cloud.code() ? 'Mi código' : 'Guardar avance';
+    this.label(x, y, label, 15, '#f4f1e8', true);
     this.accountButton = { x, y };
   }
 

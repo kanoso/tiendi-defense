@@ -8,6 +8,8 @@ import { loadProgress, saveProgress, whenProgressSaved } from './storage';
 // the game simply keeps its progress on this device, as it always did.
 
 const CODE_KEY = 'tower-defense-heroes.player-code';
+/** The Google account's name, to show on this device only. Never sent anywhere. */
+const NAME_KEY = 'tower-defense-heroes.account-name';
 /** Saves that come close together travel as one. */
 const PUSH_DELAY_MS = 800;
 
@@ -63,7 +65,7 @@ export function progressCloud(): ProgressCloud | null {
  * that changed the progress here (something arrived from another device).
  */
 export async function syncNow(): Promise<boolean> {
-  if (!cloud?.code()) return false;
+  if (!cloud?.linked()) return false;
   const local = loadProgress();
   setState('saving');
   try {
@@ -85,10 +87,28 @@ export function adoptProgress(progress: Progress): void {
 }
 
 function schedulePush(): void {
-  if (!cloud?.code()) return;
+  if (!cloud?.linked()) return;
   if (pushTimer !== null) window.clearTimeout(pushTimer);
   pushTimer = window.setTimeout(() => {
     pushTimer = null;
     void syncNow();
   }, PUSH_DELAY_MS);
+}
+
+/** The name of the Google account this device is signed in to, if known. */
+export function accountName(): string | null {
+  try {
+    return localStorage.getItem(NAME_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function rememberAccountName(name: string | null): void {
+  try {
+    if (name) localStorage.setItem(NAME_KEY, name);
+    else localStorage.removeItem(NAME_KEY);
+  } catch {
+    // Without storage the name is simply not shown.
+  }
 }

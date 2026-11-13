@@ -5,7 +5,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { AccountStore, createAccountsApi } from './accounts';
+import { createAccountsApi } from './accounts';
+import { googleKeysFromGoogle, type GoogleKeys } from './google';
 import { findDifficulty } from '../src/data/difficulty';
 import type { ServerMessage } from '../src/net/protocol';
 import { Room } from '../src/net/room';
@@ -32,6 +33,10 @@ export interface GameServerOptions {
   allowedOrigins?: readonly string[];
   /** Folder where player accounts are kept. Without one, accounts are not offered. */
   dataDir?: string;
+  /** The game's Google client id. Without it, signing in with Google is not offered. */
+  googleClientId?: string;
+  /** Where Google's public keys come from. Google itself unless a test says otherwise. */
+  googleKeys?: GoogleKeys;
 }
 
 export interface GameServer {
@@ -75,10 +80,14 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
   const turnMs = options.turnMs ?? 50;
   const abandonedRoomMs = options.abandonedRoomMs ?? 5 * 60_000;
   const staticRoot = options.staticDir ? path.resolve(options.staticDir) : null;
-  const accounts = createAccountsApi(
-    options.dataDir ? new AccountStore(path.resolve(options.dataDir)) : null,
-    options.allowedOrigins ?? [],
-  );
+  const accounts = createAccountsApi({
+    dataDir: options.dataDir ? path.resolve(options.dataDir) : null,
+    allowedOrigins: options.allowedOrigins ?? [],
+    google:
+      options.googleClientId && options.dataDir
+        ? { clientId: options.googleClientId, keys: options.googleKeys ?? googleKeysFromGoogle() }
+        : null,
+  });
 
   const rooms = new Map<string, Room>();
   /** The live connection of each player, per room. */
@@ -257,7 +266,16 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
         vary: 'Origin',
         ...(allowed ? { 'access-control-allow-origin': origin } : {}),
       });
-      response.end(JSON.stringify({ ok: true, rooms: rooms.size, players, accounts: Boolean(options.dataDir) }));
+      response.end(
+        JSON.stringify({
+          ok: true,
+          rooms: rooms.size,
+          players,
+          accounts: Boolean(options.dataDir),
+          // Public by nature: the page needs it to show Google's sign-in button.
+          google: options.dataDir ? (options.googleClientId ?? null) : null,
+        }),
+      );
       return;
     }
     if (await accounts(request, response, url.pathname)) return;

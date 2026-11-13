@@ -24,13 +24,19 @@ export function coopServerBase(): string {
  * What the server at `base` offers, or null if none answers there. Never
  * throws; gives up after a moment.
  */
-export async function serverFeatures(base: string): Promise<{ coop: true; accounts: boolean } | null> {
+export async function serverFeatures(
+  base: string,
+): Promise<{ coop: true; accounts: boolean; googleClientId: string | null } | null> {
   try {
     const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(2500) });
     if (!response.ok) return null;
-    const body = (await response.json()) as { ok?: unknown; accounts?: unknown } | null;
+    const body = (await response.json()) as { ok?: unknown; accounts?: unknown; google?: unknown } | null;
     if (body?.ok !== true) return null;
-    return { coop: true, accounts: body.accounts === true };
+    return {
+      coop: true,
+      accounts: body.accounts === true,
+      googleClientId: typeof body.google === 'string' && body.google ? body.google : null,
+    };
   } catch {
     return null;
   }

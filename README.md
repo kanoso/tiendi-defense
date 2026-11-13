@@ -89,7 +89,18 @@ alguien se desvía o vuelve tras perder la conexión.
 
 ## Guardar el avance
 
-Con el servidor en marcha, «Guardar avance» en el menú da un código de jugador
+Con el servidor en marcha, «Guardar avance» en el menú ofrece dos formas:
+**entrar con Google** (si el servidor tiene `GOOGLE_CLIENT_ID`) o un código de
+jugador. Con Google, el servidor verifica la firma del token con las claves
+públicas de Google y entrega una sesión propia; del lado de Google solo guarda
+un hash de su identificador, nunca el email ni el nombre. Entrar con Google en
+un dispositivo que usaba un código suma ese avance a la cuenta.
+
+Para activarlo hace falta un ID de cliente OAuth de tipo «Aplicación web» en
+Google Cloud, con los dominios del juego como orígenes de JavaScript
+autorizados, y pasarlo al servidor en `GOOGLE_CLIENT_ID`.
+
+El código de jugador da
 (como `KXT4-9QPM`) que guarda estrellas, rangos y récords sin pedir nombre ni
 email. Escribiendo ese código en otro dispositivo, el avance de los dos se une:
 de cada cosa queda lo mejor. Cada partida ganada se guarda sola.

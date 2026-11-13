@@ -11,6 +11,8 @@ services:
     environment:
       # Sites, besides this server, whose pages may use it. Comma-separated.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      # OAuth client id for signing in with Google. Empty: the option is not shown.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     volumes:
       # Player progress. Kept apart from the image so it survives every update.
       - progress:/app/data
