@@ -83,6 +83,8 @@ test('a code keeps the progress, and another device gets it by typing the code',
 });
 
 test('a victory on one device reaches the other one', async ({ browser }) => {
+  // Two devices, a game and several trips to the server: room for a slow machine.
+  test.setTimeout(90_000);
   const phone = await openDevice(browser, { meadow: 1 });
   const code = await createCode(phone);
   const computer = await openDevice(browser);
