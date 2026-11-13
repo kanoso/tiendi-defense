@@ -26,6 +26,7 @@ import { SIGNAL_STYLE, SignalMarks } from '../entities/signalMarks';
 import type { GameMode } from '../data/modes';
 import { CAST_EFFECT_TICKS, type CastEffect } from '../entities/abilityEffects';
 import { drawBoard } from '../entities/board';
+import { blockedOffsets } from '../entities/crowd';
 import { drawOverlay, type Aim } from '../entities/overlay';
 import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
 import {
@@ -100,6 +101,8 @@ interface EnemyView {
   sprite: Phaser.GameObjects.Image;
   shadow: Phaser.GameObjects.Ellipse | null;
   lastX: number;
+  /** Shift on screen from its spot on the road, eased towards where it should be. */
+  offset: Point;
 }
 
 interface TowerView {
@@ -712,6 +715,17 @@ export class GameScene extends Phaser.Scene {
 
   private syncEnemies(alpha: number): void {
     const alive = new Set<number>();
+    // Enemies held by the same hero stand on one spot; spread them on screen.
+    const crowd = blockedOffsets(
+      this.game_.enemies
+        .filter((enemy) => enemy.blockedBy !== null)
+        .map((enemy) => {
+          const road = this.level.paths[enemy.path];
+          const here = pointAt(road, enemy.distance);
+          const ahead = pointAt(road, enemy.distance + 1);
+          return { id: enemy.id, heroId: enemy.blockedBy!, direction: { x: ahead.x - here.x, y: ahead.y - here.y } };
+        }),
+    );
     for (const enemy of this.game_.enemies) {
       alive.add(enemy.id);
       const style = ENEMY_STYLE[enemy.type];
@@ -723,21 +737,26 @@ export class GameScene extends Phaser.Scene {
         const shadow = flying
           ? this.add.ellipse(0, 0, style.radius * 1.6, style.radius * 0.7, 0x000000, 0.28).setDepth(1)
           : null;
-        view = { sprite, shadow, lastX: Number.NEGATIVE_INFINITY };
+        view = { sprite, shadow, lastX: Number.NEGATIVE_INFINITY, offset: { x: 0, y: 0 } };
         this.enemyViews.set(enemy.id, view);
       }
       // Extrapolate the pending fraction of a step so motion stays smooth.
       const stopped = enemy.stunTicks > 0 || enemy.blockedBy !== null;
       const lookAhead = stopped ? 0 : (enemy.speed * alpha * STEP_MS) / 1000;
-      const ground = pointAt(this.level.paths[enemy.path], enemy.distance + lookAhead);
+      const onRoad = pointAt(this.level.paths[enemy.path], enemy.distance + lookAhead);
+      const target = crowd.get(enemy.id) ?? { x: 0, y: 0 };
+      view.offset.x += (target.x - view.offset.x) * 0.2;
+      view.offset.y += (target.y - view.offset.y) * 0.2;
+      const ground = { x: onRoad.x + view.offset.x, y: onRoad.y + view.offset.y };
 
       // Walkers bob as they step; flyers hover above their shadow.
       const beat = this.game_.tick / 6 + enemy.id;
       const lift = flying ? 16 + Math.sin(beat / 2) * 3 : stopped ? 0 : Math.abs(Math.sin(beat)) * 2;
-      if (view.lastX !== Number.NEGATIVE_INFINITY && ground.x !== view.lastX) {
-        view.sprite.setFlipX(ground.x < view.lastX);
+      // Facing follows the road, not the sideways shuffle into the crowd.
+      if (view.lastX !== Number.NEGATIVE_INFINITY && onRoad.x !== view.lastX) {
+        view.sprite.setFlipX(onRoad.x < view.lastX);
       }
-      view.lastX = ground.x;
+      view.lastX = onRoad.x;
       view.sprite.setPosition(ground.x, ground.y - lift);
       view.shadow?.setPosition(ground.x, ground.y + style.radius * 0.6);
       this.enemyPositions.set(enemy.id, { x: ground.x, y: ground.y - lift });

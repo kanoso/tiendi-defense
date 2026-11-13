@@ -295,6 +295,13 @@ describe('serving the game', () => {
     expect(dotted.status).toBe(404);
   });
 
+  it('serves the app manifest with its own type, so phones can install the game', async () => {
+    await start({ staticDir: 'public' });
+    const response = await fetch(`http://127.0.0.1:${server.port}/manifest.webmanifest`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/manifest+json; charset=utf-8');
+  });
+
   it('serves the files of the game when it has them', async () => {
     await start({ staticDir: 'public' });
     const response = await fetch(`http://127.0.0.1:${server.port}/assets/CREDITS.md`);

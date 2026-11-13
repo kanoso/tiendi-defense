@@ -61,6 +61,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.ogg': 'audio/ogg',
   '.m4a': 'audio/mp4',
   '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
 
 /** Where a connection stands: not in a room yet, or a given player in one. */
