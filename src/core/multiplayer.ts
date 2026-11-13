@@ -15,6 +15,56 @@ export function assignHeroes(playerCount: number, heroCount: number): number[][]
   return heroes;
 }
 
+/** The most heroes one player may hold: an even split, rounded up. */
+export function heroShare(playerCount: number, heroCount: number): number {
+  return Math.ceil(heroCount / Math.max(1, playerCount));
+}
+
+/**
+ * Hands the heroes out taking into account the ones each player chose. Each
+ * player keeps their choices, first ones first, up to a fair share; a hero
+ * chosen by two goes to whoever comes first. Whatever is left is handed out in
+ * turns, so without any choices this gives the same as `assignHeroes`.
+ */
+export function distributeHeroes(
+  wishes: readonly (readonly number[])[],
+  heroCount: number,
+): number[][] {
+  const playerCount = wishes.length;
+  const isHero = (id: number) => Number.isInteger(id) && id >= 1 && id <= heroCount;
+  const valid = wishes.map((list) => list.filter(isHero));
+
+  // Everyone gets the same number of heroes; when they do not divide evenly,
+  // the extra ones go to whoever asked for more, then to whoever came first.
+  const base = Math.floor(heroCount / playerCount);
+  const shares = valid.map(() => base);
+  valid
+    .map((list, index) => ({ index, asked: list.length }))
+    .sort((a, b) => b.asked - a.asked || a.index - b.index)
+    .slice(0, heroCount % playerCount)
+    .forEach(({ index }) => shares[index]++);
+
+  const taken = new Set<number>();
+  const heroes: number[][] = valid.map((list, index) => {
+    const kept: number[] = [];
+    for (const id of list) {
+      if (kept.length >= shares[index] || taken.has(id)) continue;
+      kept.push(id);
+      taken.add(id);
+    }
+    return kept;
+  });
+
+  let next = 0;
+  for (let id = 1; id <= heroCount; id++) {
+    if (taken.has(id)) continue;
+    while (heroes[next].length >= shares[next]) next = (next + 1) % playerCount;
+    heroes[next].push(id);
+    next = (next + 1) % playerCount;
+  }
+  return heroes;
+}
+
 /** Index of the player who controls a hero, or null if nobody does. */
 export function ownerOf(heroesByPlayer: readonly (readonly number[])[], heroId: number): number | null {
   const owner = heroesByPlayer.findIndex((heroes) => heroes.includes(heroId));

@@ -175,6 +175,14 @@ describe('playing', () => {
     expect(forBeto).toEqual(forAna);
   });
 
+  it('passes a signal on the map to the other player at once, without a turn', async () => {
+    await start();
+    const { ana, beto } = await twoPlayersInGame();
+    const seen = beto.client.next('signal');
+    ana.client.send({ t: 'signal', signal: { kind: 'help', x: 120, y: 80 } });
+    expect(await seen).toMatchObject({ t: 'signal', kind: 'help', x: 120, y: 80 });
+  });
+
   it('numbers the turns in order', async () => {
     await start();
     const { ana } = await twoPlayersInGame();

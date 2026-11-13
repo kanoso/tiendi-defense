@@ -5,6 +5,7 @@ import { coopLevel } from './coopLevel';
 import {
   HASH_EVERY_TURNS,
   MAX_PLAYERS,
+  SIGNAL_EVERY_TURNS,
   TURN_TICKS,
   type GameStart,
   type ServerMessage,
@@ -393,5 +394,130 @@ describe('keeping every player in step', () => {
       }
     }
     expect(hashState(game)).toBe(hashState(room.game!));
+  });
+});
+
+describe('signals on the map', () => {
+  it('shows one player\'s signal to everyone, with who sent it', () => {
+    const { room, ids } = started('Ana', 'Beto');
+    room.drain();
+    room.signal(ids[0], { kind: 'help', x: 300, y: 200 });
+    const expected = { t: 'signal', playerId: ids[0], kind: 'help', x: 300, y: 200 };
+    expect(last(room, ids[0], 'signal')).toEqual(expected);
+    expect(last(room, ids[1], 'signal')).toEqual(expected);
+  });
+
+  it('does not reach a player who is disconnected', () => {
+    const { room, ids } = started('Ana', 'Beto');
+    room.disconnect(ids[1]);
+    room.drain();
+    room.signal(ids[0], { kind: 'going', x: 10, y: 10 });
+    expect(last(room, ids[1], 'signal')).toBeUndefined();
+  });
+
+  it('ignores a signal that makes no sense', () => {
+    const { room, ids } = started('Ana', 'Beto');
+    room.drain();
+    for (const raw of [
+      null,
+      'help',
+      { kind: 'dance', x: 1, y: 1 },
+      { kind: 'help', x: 'left', y: 1 },
+      { kind: 'help', x: Number.NaN, y: 1 },
+      { kind: 'help', x: 1 },
+    ]) {
+      room.signal(ids[0], raw);
+    }
+    expect(last(room, ids[1], 'signal')).toBeUndefined();
+  });
+
+  it('keeps a signal inside the map', () => {
+    const { room, ids } = started('Ana', 'Beto');
+    room.drain();
+    room.signal(ids[0], { kind: 'help', x: -500, y: 99999 });
+    const level = coopLevel('meadow', 'normal', 2);
+    expect(last(room, ids[1], 'signal')).toMatchObject({ x: 0, y: level.height });
+  });
+
+  it('lets a player signal again only after a moment', () => {
+    const { room, ids } = started('Ana', 'Beto');
+    room.drain();
+    room.signal(ids[0], { kind: 'help', x: 1, y: 1 });
+    room.signal(ids[0], { kind: 'help', x: 2, y: 2 });
+    // The other player is not held back by it.
+    room.signal(ids[1], { kind: 'going', x: 3, y: 3 });
+    const signals = () => inbox(room, ids[1]).filter((message) => message.t === 'signal');
+    expect(signals()).toHaveLength(2);
+
+    for (let turn = 0; turn < SIGNAL_EVERY_TURNS; turn++) room.tick();
+    room.signal(ids[0], { kind: 'help', x: 4, y: 4 });
+    expect(signals()).toHaveLength(3);
+  });
+
+  it('has no signals before the game starts', () => {
+    const room = makeRoom();
+    const ids = fill(room, 'Ana', 'Beto');
+    room.signal(ids[0], { kind: 'help', x: 1, y: 1 });
+    expect(last(room, ids[1], 'signal')).toBeUndefined();
+  });
+});
+
+describe('choosing heroes in the lobby', () => {
+  it('lets a player take a free hero, and everyone sees it', () => {
+    const room = makeRoom();
+    const [ana, beto] = fill(room, 'Ana', 'Beto');
+    room.drain();
+    room.pick(ana, 3);
+    expect(last(room, beto, 'room')?.room.players[0].heroes).toEqual([3]);
+  });
+
+  it('gives a hero back when it is picked again', () => {
+    const room = makeRoom();
+    const [ana] = fill(room, 'Ana', 'Beto');
+    room.pick(ana, 3);
+    room.pick(ana, 3);
+    expect(room.info().players[0].heroes).toEqual([]);
+  });
+
+  it('does not let a player take a hero someone else has', () => {
+    const room = makeRoom();
+    const [ana, beto] = fill(room, 'Ana', 'Beto');
+    room.pick(ana, 3);
+    room.pick(beto, 3);
+    expect(room.info().players.map((player) => player.heroes)).toEqual([[3], []]);
+  });
+
+  it('does not let a player take more than their share', () => {
+    const room = makeRoom();
+    const [ana] = fill(room, 'Ana', 'Beto');
+    for (const hero of [1, 2, 3]) room.pick(ana, hero);
+    expect(room.info().players[0].heroes).toEqual([1, 2]);
+  });
+
+  it('gives back the last heroes taken when someone joins and shares shrink', () => {
+    const room = makeRoom();
+    const [ana] = fill(room, 'Ana');
+    for (const hero of [4, 1, 2]) room.pick(ana, hero);
+    fill(room, 'Beto');
+    expect(room.info().players[0].heroes).toEqual([4, 1]);
+  });
+
+  it('starts the game with the heroes chosen, and the rest handed out', () => {
+    const room = makeRoom();
+    const ids = fill(room, 'Ana', 'Beto');
+    room.pick(ids[1], 1);
+    everyoneReady(room, ids);
+    expect(room.info().players.map((player) => player.heroes)).toEqual([[2, 4], [1, 3]]);
+  });
+
+  it('ignores a pick that is not a hero, or that comes once the game started', () => {
+    const room = makeRoom();
+    const ids = fill(room, 'Ana', 'Beto');
+    for (const wrong of [0, 5, 1.5, Number.NaN]) room.pick(ids[0], wrong);
+    expect(room.info().players[0].heroes).toEqual([]);
+    everyoneReady(room, ids);
+    const before = room.info().players.map((player) => player.heroes);
+    room.pick(ids[0], 2);
+    expect(room.info().players.map((player) => player.heroes)).toEqual(before);
   });
 });

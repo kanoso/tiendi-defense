@@ -64,7 +64,11 @@ npm run server
 ```
 
 y cada jugador abre `http://<dirección de esa máquina>:8787`. Uno crea la sala
-y comparte el código de 4 letras; la partida empieza cuando todos están listos.
+y comparte el código de 4 letras. En la sala cada uno elige sus héroes; los que
+nadie elija se reparten al empezar, y la partida empieza cuando todos están
+listos. Durante el juego, «¡Ayuda!» y «Voy yo» (o las teclas H y V, donde esté
+el puntero) marcan un punto del mapa para los demás. Si se corta la conexión o
+se recarga la página, el juego vuelve solo a la misma partida.
 
 Con Docker, después de `npm run build` y `npm run build:server`:
 

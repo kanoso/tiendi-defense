@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignHeroes, isAllowed, ownerOf } from './multiplayer';
+import { assignHeroes, distributeHeroes, heroShare, isAllowed, ownerOf } from './multiplayer';
 import type { Command } from './types';
 
 describe('assignHeroes', () => {
@@ -71,5 +71,43 @@ describe('isAllowed', () => {
 
   it('never lets a player start the wave directly: that takes everyone being ready', () => {
     expect(isAllowed({ type: 'startWave' }, mine)).toBe(false);
+  });
+});
+
+describe('heroes chosen by the players', () => {
+  it('without choices, hands the heroes out in turns, as before', () => {
+    expect(distributeHeroes([[], []], 4)).toEqual(assignHeroes(2, 4));
+    expect(distributeHeroes([[], [], [], []], 4)).toEqual(assignHeroes(4, 4));
+  });
+
+  it('gives each player the heroes they chose', () => {
+    expect(distributeHeroes([[4, 2], [1]], 4)).toEqual([[4, 2], [1, 3]]);
+  });
+
+  it('never gives a player more than their fair share, keeping their first choices', () => {
+    // Three players: shares of 2, 1 and 1.
+    expect(heroShare(3, 4)).toBe(2);
+    expect(distributeHeroes([[1, 2, 3], [], []], 4)).toEqual([[1, 2], [3], [4]]);
+  });
+
+  it('gives a hero chosen twice to whoever comes first', () => {
+    expect(distributeHeroes([[3], [3]], 4)).toEqual([[3, 1], [2, 4]]);
+  });
+
+  it('ignores choices that are not heroes of the game', () => {
+    expect(distributeHeroes([[9, 0, -1, 1.5], []], 4)).toEqual(assignHeroes(2, 4));
+  });
+
+  it('leaves every hero to someone, each one once', () => {
+    for (const wishes of [[[2], [2], [2]], [[1, 2], [3, 4], []], [[4], [3], [2], [1]]]) {
+      const result = distributeHeroes(wishes, 4);
+      expect(result.flat().sort()).toEqual([1, 2, 3, 4]);
+    }
+  });
+
+  it('shares out as evenly as possible', () => {
+    expect(heroShare(1, 4)).toBe(4);
+    expect(heroShare(2, 4)).toBe(2);
+    expect(heroShare(4, 4)).toBe(1);
   });
 });

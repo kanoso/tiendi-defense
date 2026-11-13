@@ -8,13 +8,28 @@ export const TURN_TICKS = 3;
 export const MAX_PLAYERS = 4;
 /** Players report a fingerprint of their game every this many turns (3 seconds). */
 export const HASH_EVERY_TURNS = 60;
+/** A player can put a new signal on the map once every this many turns (1 second). */
+export const SIGNAL_EVERY_TURNS = 20;
+
+/** Quick signals on the map, in place of a text chat. */
+export const SIGNAL_KINDS = ['help', 'going'] as const;
+export type SignalKind = (typeof SIGNAL_KINDS)[number];
+
+export interface Signal {
+  kind: SignalKind;
+  x: number;
+  y: number;
+}
 
 export interface PlayerInfo {
   id: number;
   name: string;
   connected: boolean;
   ready: boolean;
-  /** Ids of the heroes this player controls. Empty until the game starts. */
+  /**
+   * In the lobby, the heroes this player chose; once the game starts, the ones
+   * they control.
+   */
   heroes: number[];
 }
 
@@ -42,9 +57,13 @@ export type ClientMessage =
   /** Come back to a game after losing the connection. */
   | { t: 'rejoin'; code: string; token: string }
   | { t: 'ready'; ready: boolean }
+  /** In the lobby: takes a free hero, or gives back one already taken. */
+  | { t: 'pick'; heroId: number }
   | { t: 'command'; command: Command }
   /** The fingerprint of this player's game at the end of `turn`. */
-  | { t: 'hash'; turn: number; hash: number };
+  | { t: 'hash'; turn: number; hash: number }
+  /** Points at a place on the map for everyone else. */
+  | { t: 'signal'; signal: Signal };
 
 export type ServerMessage =
   /** `token` proves who you are if you need to rejoin. Keep it private. */
@@ -55,4 +74,6 @@ export type ServerMessage =
   | { t: 'turn'; turn: number; commands: Command[] }
   /** The whole game as it stands after `turn`: for a player who rejoined or drifted. */
   | { t: 'snapshot'; turn: number; start: GameStart; state: GameState }
+  /** A signal one of the players put on the map. */
+  | { t: 'signal'; playerId: number } & Signal
   | { t: 'error'; message: string };

@@ -1,11 +1,13 @@
 import { CoopSession } from './CoopSession';
 import type { ClientMessage, ServerMessage } from './protocol';
+import type { Ticket } from './rejoinTicket';
 
 export type LinkStatus = 'connecting' | 'online' | 'reconnecting' | 'closed';
 
 const RECONNECT_EVERY_MS = 2000;
 const RECONNECT_ATTEMPTS = 30;
 const CONNECT_TIMEOUT_MS = 6000;
+const REJOIN_TIMEOUT_MS = 6000;
 
 /**
  * Where the co-op server is, as an http(s) address, or null to use the same
@@ -28,6 +30,35 @@ export async function isCoopServerUp(base: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Gets back into a game this tab was playing before the page was reloaded.
+ * Resolves with a live link once the server has sent the game, or with null if
+ * there is no game to go back to (it ended, or the server forgot the room).
+ */
+export async function rejoinGame(base: string, ticket: Ticket): Promise<CoopLink | null> {
+  const link = new CoopLink(base);
+  try {
+    await link.connect();
+  } catch {
+    return null;
+  }
+  const back = await new Promise<boolean>((resolve) => {
+    const timer = window.setTimeout(() => resolve(false), REJOIN_TIMEOUT_MS);
+    link.onChange = () => {
+      const session = link.session;
+      if (session.start && session.room) resolve(true);
+      else if (session.lastError || link.status === 'closed') resolve(false);
+      else return;
+      window.clearTimeout(timer);
+    };
+    link.send({ t: 'rejoin', ...ticket });
+  });
+  link.onChange = () => {};
+  if (back) return link;
+  link.leave();
+  return null;
 }
 
 /**

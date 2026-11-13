@@ -1,6 +1,8 @@
 import type { DifficultyId } from '../data/difficulty';
 import { findDifficulty } from '../data/difficulty';
+import { heroShare } from '../core/multiplayer';
 import { findMap } from '../data/maps';
+import { HERO_STYLE } from '../entities/styles';
 import { CoopLink } from '../net/CoopLink';
 import { MAX_PLAYERS } from '../net/protocol';
 
@@ -47,6 +49,28 @@ const STYLE = `
   background: #2f3828; border-radius: 4px; }
 #lobby li.me { outline: 1px solid #ffe066; }
 #lobby .ready { color: #7dff9b; }
+#lobby .heroes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+#lobby .heroes button { text-align: left; padding: 8px 10px; font-weight: 500; }
+#lobby .heroes button.mine { color: #1b1f17; background: #7dff9b; }
+#lobby .heroes button .who { display: block; font-size: 12px; opacity: 0.8; }
+#lobby h3 { margin: 16px 0 0; font-size: 15px; }
+/* A phone held sideways: little height, so everything tighter and wider. */
+@media (max-height: 480px) {
+  #lobby { padding: 6px; }
+  #lobby .card { width: min(100%, 640px); padding: 10px 14px; }
+  #lobby h2 { margin: 0; font-size: 17px; }
+  #lobby p { margin: 2px 0; font-size: 14px; }
+  #lobby .big-code { margin: 0; font-size: 26px; }
+  #lobby ul { margin-top: 4px; }
+  #lobby li { padding: 3px 10px; margin-top: 3px; font-size: 14px; }
+  #lobby h3 { margin-top: 6px; font-size: 14px; }
+  #lobby .heroes { grid-template-columns: repeat(4, 1fr); margin-top: 4px; }
+  #lobby .heroes button { padding: 5px 8px; font-size: 13px; }
+  #lobby .row { margin-top: 6px; }
+  #lobby button { padding: 8px; }
+  #lobby label { margin: 6px 0 2px; }
+  #lobby input { padding: 7px 10px; }
+}
 #lobby .error { min-height: 1.4em; margin-top: 10px; color: #ff9d8a; }
 `;
 
@@ -239,6 +263,7 @@ export function openLobby(options: LobbyOptions): void {
       list.append(item);
     }
     card.append(list);
+    card.append(heroChoice(room, session.playerId));
 
     const actions = element('div', '', 'row');
     const ready = session.isReady();
@@ -249,6 +274,32 @@ export function openLobby(options: LobbyOptions): void {
     actions.append(readyButton, button('Salir', leave));
     card.append(actions);
     card.append(element('div', 'La partida empieza cuando todos están listos.', 'hint'));
+  }
+
+  /** One button per hero: free ones can be taken, one's own can be given back. */
+  function heroChoice(room: NonNullable<CoopLink['session']['room']>, me: number | null): HTMLElement {
+    const section = element('div');
+    const share = heroShare(room.players.length, findMap(room.mapId).level.heroes.length);
+    section.append(element('h3', 'Héroes'));
+    section.append(
+      element('div', `Elige hasta ${share}. Los que nadie elija se reparten al empezar.`, 'hint'),
+    );
+    const grid = element('div', '', 'heroes');
+    grid.id = 'lobby-heroes';
+    findMap(room.mapId).level.heroes.forEach((spawn, index) => {
+      const heroId = index + 1;
+      const owner = room.players.find((player) => player.heroes.includes(heroId));
+      const mine = owner !== undefined && owner.id === me;
+      const choice = button(HERO_STYLE[spawn.type].name, () => link?.session.pick(heroId));
+      choice.id = `lobby-hero-${heroId}`;
+      choice.append(element('span', owner ? (mine ? 'Tuyo' : owner.name) : 'Libre', 'who'));
+      if (mine) choice.classList.add('mine');
+      // Someone else's hero cannot be taken from them.
+      if (owner && !mine) choice.disabled = true;
+      grid.append(choice);
+    });
+    section.append(grid);
+    return section;
   }
 
   showEntrance();

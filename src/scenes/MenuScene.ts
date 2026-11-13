@@ -3,7 +3,8 @@ import { DIFFICULTIES, findDifficulty, type DifficultyId } from '../data/difficu
 import { MAP_IDS, MAPS, type GameMap } from '../data/maps';
 import { findMode, GAME_MODES, type GameMode } from '../data/modes';
 import { GAME_HEIGHT, GAME_WIDTH } from '../data/rules';
-import { coopServerBase, isCoopServerUp } from '../net/CoopLink';
+import { coopServerBase, isCoopServerUp, rejoinGame } from '../net/CoopLink';
+import { clearTicket, loadTicket, tabStore } from '../net/rejoinTicket';
 import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
 import { FONT, GROUND_SCALE, HERO_STYLE, SELECTION_COLOR } from '../entities/styles';
 import {
@@ -181,6 +182,19 @@ export class MenuScene extends Phaser.Scene {
   private async offerCoop(): Promise<void> {
     const server = coopServerBase();
     if (!(await isCoopServerUp(server)) || !this.scene.isActive()) return;
+
+    // This tab was in a shared game when the page was reloaded: go straight back.
+    const ticket = loadTicket(tabStore());
+    if (ticket) {
+      const link = await rejoinGame(server, ticket);
+      if (link && this.scene.isActive()) {
+        this.scene.start('game', { coop: link });
+        return;
+      }
+      link?.leave();
+      clearTicket(tabStore());
+      if (!this.scene.isActive()) return;
+    }
 
     const x = 16 + 75;
     const frame = this.panel(x, 30, 150, 32, true);

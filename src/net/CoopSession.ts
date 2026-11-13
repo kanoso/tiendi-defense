@@ -8,7 +8,18 @@ import {
   type GameStart,
   type RoomInfo,
   type ServerMessage,
+  type SignalKind,
 } from './protocol';
+
+/** A signal another player (or this one) put on the map. */
+export interface ReceivedSignal {
+  playerId: number;
+  /** Name of who sent it, if they are still in the room. */
+  name: string | null;
+  kind: SignalKind;
+  x: number;
+  y: number;
+}
 
 /**
  * One player's side of a shared game: who they are in the room, which turns
@@ -34,6 +45,8 @@ export class CoopSession {
   private confirmedTurn = -1;
   /** A whole game sent by the server, waiting to replace the local one. */
   private snapshot: GameState | null = null;
+  /** Signals received and not yet shown. */
+  private signals: ReceivedSignal[] = [];
 
   constructor(private send: (message: ClientMessage) => void) {}
 
@@ -65,6 +78,15 @@ export class CoopSession {
         // The snapshot already contains every turn up to its own.
         this.turns.clear();
         this.confirmedTurn = message.turn;
+        return;
+      case 'signal':
+        this.signals.push({
+          playerId: message.playerId,
+          name: this.room?.players.find((player) => player.id === message.playerId)?.name ?? null,
+          kind: message.kind,
+          x: message.x,
+          y: message.y,
+        });
         return;
       case 'error':
         this.lastError = message.message;
@@ -110,6 +132,23 @@ export class CoopSession {
     // The server would refuse it anyway; no need to send it.
     if (!isAllowed(command, this.ownHeroes())) return;
     this.send({ t: 'command', command });
+  }
+
+  /** Points at a place on the map for everyone, this player included. */
+  signal(kind: SignalKind, x: number, y: number): void {
+    this.send({ t: 'signal', signal: { kind, x, y } });
+  }
+
+  /** The signals that arrived since the last call. Handed over once. */
+  takeSignals(): ReceivedSignal[] {
+    const signals = this.signals;
+    this.signals = [];
+    return signals;
+  }
+
+  /** In the lobby: takes a free hero, or gives back one already taken. */
+  pick(heroId: number): void {
+    this.send({ t: 'pick', heroId });
   }
 
   setReady(ready: boolean): void {

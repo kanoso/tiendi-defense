@@ -199,8 +199,13 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
       switch (message.t) {
         case 'ready':
           return room.setReady(playerId, message.ready === true);
+        case 'pick':
+          if (typeof message.heroId === 'number') room.pick(playerId, message.heroId);
+          return;
         case 'command':
           return room.submit(playerId, message.command);
+        case 'signal':
+          return room.signal(playerId, message.signal);
         case 'hash':
           if (typeof message.turn === 'number' && typeof message.hash === 'number') {
             room.reportHash(playerId, message.turn, message.hash);

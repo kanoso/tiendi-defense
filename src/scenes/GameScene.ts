@@ -20,6 +20,9 @@ import { asEndless } from '../data/endless';
 import { findMap, MAPS, type GameMap } from '../data/maps';
 import type { CoopLink } from '../net/CoopLink';
 import { coopLevel } from '../net/coopLevel';
+import { clearTicket, saveTicket, tabStore } from '../net/rejoinTicket';
+import type { SignalKind } from '../net/protocol';
+import { SIGNAL_STYLE, SignalMarks } from '../entities/signalMarks';
 import type { GameMode } from '../data/modes';
 import { CAST_EFFECT_TICKS, type CastEffect } from '../entities/abilityEffects';
 import { drawBoard } from '../entities/board';
@@ -162,9 +165,15 @@ export class GameScene extends Phaser.Scene {
   private bigTitle!: Phaser.GameObjects.Text;
   /** Every button on screen, by what it does. Also read by the browser tests. */
   private controls!: Record<
-    'wave' | 'speed' | 'pause' | 'sound' | 'skip' | 'resume' | 'pauseMenu' | 'retry' | 'endMenu',
+    'wave' | 'sound' | 'skip' | 'resume' | 'pauseMenu' | 'retry' | 'endMenu',
     Phaser.GameObjects.Text
-  >;
+  > &
+    // Speed and pause only exist alone; the signals only in a shared game.
+    Partial<Record<'speed' | 'pause' | 'help' | 'going', Phaser.GameObjects.Text>>;
+  /** Signals other players (and this one) put on the map. */
+  private signalMarks!: SignalMarks;
+  /** A signal button was pressed: the next tap on the map places it. */
+  private armedSignal: SignalKind | null = null;
 
   private tutorial!: Tutorial;
   private hint!: Phaser.GameObjects.Text;
@@ -239,6 +248,11 @@ export class GameScene extends Phaser.Scene {
     this.tutorial = new Tutorial(this.coop !== null || hasSeenTutorial());
     this.seenPhase = this.game_.phase;
     this.seenTowers = 0;
+    this.signalMarks = new SignalMarks(this);
+    // Kept in case the page is reloaded: the menu then brings the player back here.
+    const ticket = this.coop?.session.rejoinTicket();
+    if (ticket) saveTicket(tabStore(), ticket);
+    this.armedSignal = null;
     this.sounds = new SoundPlayer(this);
     this.heard = listen(this.game_);
     this.earnedStars = null;
@@ -254,6 +268,7 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, deltaMs: number): void {
     const alpha = this.coop ? this.advanceShared(this.coop, deltaMs) : this.advanceAlone(deltaMs);
 
+    if (this.coop) this.showSignals(this.coop);
     for (const event of soundEventsSince(this.heard, this.game_)) this.sounds.play(event);
     this.heard = listen(this.game_);
     this.recordVictoryOnce();
@@ -348,6 +363,9 @@ export class GameScene extends Phaser.Scene {
     keyboard.on('keydown-P', () => this.togglePause());
     keyboard.on('keydown-M', () => this.toggleSound());
     keyboard.on('keydown-T', () => this.skipTutorial());
+    // Signals go where the pointer is: H asks for help, V says "I am going".
+    keyboard.on('keydown-H', () => this.signalAtPointer('help'));
+    keyboard.on('keydown-V', () => this.signalAtPointer('going'));
     HERO_KEYS.forEach((key, index) => {
       keyboard.on(`keydown-${key}`, () => this.selectHero(index + 1));
     });
@@ -356,6 +374,7 @@ export class GameScene extends Phaser.Scene {
     });
     keyboard.on('keydown-ESC', () => {
       this.aim = null;
+      this.armedSignal = null;
       this.towerMenu.close();
     });
     // Back to the map picker: after the game ends, or from the pause screen.
@@ -410,6 +429,7 @@ export class GameScene extends Phaser.Scene {
     // Leaving a shared game closes the connection; the others play on.
     this.coop?.leave();
     this.coop = null;
+    clearTicket(tabStore());
     this.scene.start('menu');
   }
 
@@ -471,6 +491,10 @@ export class GameScene extends Phaser.Scene {
 
   /** A click on the map means, in order: confirm an aim, dismiss a menu, open one, select, move. */
   private handleMapClick(x: number, y: number): void {
+    if (this.armedSignal !== null) {
+      this.sendSignal(this.armedSignal, x, y);
+      return;
+    }
     if (this.paused) {
       this.refuse('Juego en pausa: pulsa P para continuar');
       return;
@@ -554,6 +578,35 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Turns down something the player tried, saying why. */
+  // --- signals on the map ---------------------------------------------------
+
+  /** A signal button: the next tap on the map places it. Pressed again, it is put away. */
+  private armSignal(kind: SignalKind): void {
+    this.armedSignal = this.armedSignal === kind ? null : kind;
+    this.aim = null;
+    this.towerMenu.close();
+    if (this.armedSignal) this.showNotice('Toca el mapa donde va la señal');
+  }
+
+  private signalAtPointer(kind: SignalKind): void {
+    if (!this.coop || isOver(this.game_)) return;
+    const pointer = this.input.activePointer;
+    this.sendSignal(kind, pointer.worldX, pointer.worldY);
+  }
+
+  private sendSignal(kind: SignalKind, x: number, y: number): void {
+    this.armedSignal = null;
+    // It comes back from the server like everyone else's, so it is shown then.
+    this.coop?.session.signal(kind, Math.round(x), Math.round(y));
+  }
+
+  private showSignals(coop: CoopLink): void {
+    const signals = coop.session.takeSignals();
+    for (const signal of signals) this.signalMarks.show(signal, this.time.now);
+    if (signals.length > 0) this.sounds.play('menu');
+    this.signalMarks.update(this.time.now);
+  }
+
   private refuse(reason: string): void {
     this.showNotice(reason);
     this.sounds.play('refused');
@@ -786,8 +839,12 @@ export class GameScene extends Phaser.Scene {
       return button;
     };
     const sound = topButton('', 76, () => this.toggleSound());
-    const pause = topButton('Pausa', 70, () => this.togglePause());
-    const speed = topButton('', 48, () => this.toggleSpeed());
+    // A shared game cannot be paused or sped up by one player; it has the
+    // signals in their place.
+    const pause = this.coop ? undefined : topButton('Pausa', 70, () => this.togglePause());
+    const speed = this.coop ? undefined : topButton('', 48, () => this.toggleSpeed());
+    const going = this.coop ? topButton(SIGNAL_STYLE.going.label, 76, () => this.armSignal('going')) : undefined;
+    const help = this.coop ? topButton(SIGNAL_STYLE.help.label, 76, () => this.armSignal('help')) : undefined;
     // Some browsers, the iPhone's among them, do not let a page go full screen.
     this.fullscreenButton = this.scale.fullscreen.available
       ? topButton('', 84, () => this.scale.toggleFullscreen(), false, 'pointerup')
@@ -853,7 +910,19 @@ export class GameScene extends Phaser.Scene {
     const retry = choice(-92, 'Jugar de nuevo', () => this.scene.restart(), true);
     const endMenu = choice(92, 'Elegir mapa', () => this.goToMenu());
 
-    this.controls = { wave, speed, pause, sound, skip, resume, pauseMenu, retry, endMenu };
+    this.controls = {
+      wave,
+      speed,
+      pause,
+      help,
+      going,
+      sound,
+      skip,
+      resume,
+      pauseMenu,
+      retry,
+      endMenu,
+    };
   }
 
   /** Who is in the shared game and who is still needed for the next wave. */
@@ -919,10 +988,14 @@ export class GameScene extends Phaser.Scene {
     if (this.coop) {
       this.controls.wave.setText(this.coop.session.isReady() ? 'Esperando…' : 'Estoy listo');
     }
-    this.controls.speed.setText(`x${this.speed}`).setVisible(!this.coop);
+    this.controls.speed?.setText(`x${this.speed}`);
+    for (const kind of ['help', 'going'] as const) {
+      // The armed one is lit, so the player knows the next tap places it.
+      this.controls[kind]?.setVisible(!over).setBackgroundColor(this.armedSignal === kind ? '#5a4a1d' : '#22281d');
+    }
     this.controls.sound.setText(volumeLabel(this.sounds.volume));
     this.fullscreenButton?.setText(this.scale.isFullscreen ? 'Ventana' : 'Completa');
-    this.controls.pause.setVisible(!over && !this.coop);
+    this.controls.pause?.setVisible(!over);
     this.controls.skip.setVisible(lesson !== null);
 
     const stars = this.earnedStars ?? 0;

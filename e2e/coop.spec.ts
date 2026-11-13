@@ -187,3 +187,115 @@ test('a player who loses the connection comes back into the same game', async ({
   const tick = (await snapshot(beto)).tick;
   await expect.poll(async () => (await snapshot(beto)).tick).toBeGreaterThan(tick);
 });
+
+/** The signals on a player's map, as kind, sender and place. */
+function marks(page: Page): Promise<{ kind: string; name: string | null; x: number; y: number }[]> {
+  return page.evaluate(() =>
+    (window as any).__game.scene
+      .getScene('game')
+      .signalMarks.marks.map(({ kind, name, x, y }: any) => ({ kind, name, x, y })),
+  );
+}
+
+async function tapControl(page: Page, control: string): Promise<void> {
+  const center = await page.evaluate((name) => {
+    const bounds = (window as any).__game.scene.getScene('game').controls[name].getBounds();
+    return { x: bounds.centerX, y: bounds.centerY };
+  }, control);
+  await clickMap(page, center.x, center.y);
+}
+
+test('a signal put on the map with its button is seen by both players, with who sent it', async ({
+  browser,
+}) => {
+  const { ana, beto } = await startTogether(browser);
+  await tapControl(ana, 'help');
+  await clickMap(ana, 480, 300);
+
+  const expected = [{ kind: 'help', name: 'Ana', x: 480, y: 300 }];
+  await expect.poll(() => marks(beto)).toEqual(expected);
+  await expect.poll(() => marks(ana)).toEqual(expected);
+  // Placing a signal does not move a hero.
+  const heroes = (await snapshot(ana)).heroes;
+  expect(heroes.every((hero) => hero.targetX !== 480 || hero.targetY !== 300)).toBe(true);
+  // And it goes away on its own.
+  await expect.poll(() => marks(beto), { timeout: 8000 }).toEqual([]);
+});
+
+test('a signal can be put where the mouse is with a key', async ({ browser }) => {
+  const { ana, beto } = await startTogether(browser);
+  const box = (await beto.locator('canvas').boundingBox())!;
+  await beto.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await beto.keyboard.press('v');
+  await expect.poll(async () => (await marks(ana)).map((mark) => [mark.kind, mark.name])).toEqual([
+    ['going', 'Beto'],
+  ]);
+});
+
+test('solo games have no signal buttons, and keep pause and speed', async ({ page }) => {
+  await page.goto('/?map=meadow');
+  await page.waitForFunction(() => (window as any).__game?.scene.getScene('game')?.towerMenu);
+  const controls = await page.evaluate(() =>
+    Object.keys((window as any).__game.scene.getScene('game').controls).filter(
+      (name) => (window as any).__game.scene.getScene('game').controls[name] !== undefined,
+    ),
+  );
+  expect(controls).toContain('pause');
+  expect(controls).toContain('speed');
+  expect(controls).not.toContain('help');
+});
+
+test('a player who reloads the page is brought back into the same game', async ({ browser }) => {
+  const { ana, beto } = await startTogether(browser);
+  await clickSlot(ana, 1);
+  await clickMenuOption(ana, 'Arquería');
+  await expect.poll(async () => (await snapshot(beto)).towers.length).toBe(1);
+  const mine = await ownHeroes(beto);
+
+  await beto.reload();
+  await inGame(beto);
+  await expect.poll(async () => (await snapshot(beto)).towers.length).toBe(1);
+  expect(await ownHeroes(beto)).toEqual(mine);
+  // The game goes on for him, in step with Ana.
+  const tick = (await snapshot(beto)).tick;
+  await expect.poll(async () => (await snapshot(beto)).tick).toBeGreaterThan(tick);
+  await expect
+    .poll(async () => Math.abs((await snapshot(beto)).tick - (await snapshot(ana)).tick))
+    .toBeLessThan(30);
+});
+
+test('after leaving a shared game for the menu, a reload stays in the menu', async ({ browser }) => {
+  const { beto } = await startTogether(browser);
+  await beto.evaluate(() => (window as any).__game.scene.getScene('game').goToMenu());
+  await beto.waitForFunction(() => (window as any).__game.scene.isActive('menu'));
+  await beto.reload();
+  await beto.waitForFunction(
+    () => (window as any).__game?.scene.getScene('menu')?.coopButton != null,
+  );
+  expect(await beto.evaluate(() => (window as any).__game.scene.isActive('game'))).toBe(false);
+});
+
+test('players choose their heroes in the lobby, and the rest are handed out', async ({ browser }) => {
+  const ana = await openLobby(browser, 'Ana');
+  await ana.locator('#lobby-create').click();
+  const code = (await ana.locator('#lobby-room-code').textContent()) ?? '';
+  const beto = await openLobby(browser, 'Beto');
+  await beto.locator('#lobby-code').fill(code);
+  await beto.locator('#lobby-join').click();
+  await expect(ana.locator('#lobby-players li')).toHaveCount(2);
+
+  await beto.locator('#lobby-hero-1').click();
+  // Ana sees the warrior taken by Beto, and cannot take it.
+  await expect(ana.locator('#lobby-hero-1')).toContainText('Beto');
+  await expect(ana.locator('#lobby-hero-1')).toBeDisabled();
+  await expect(beto.locator('#lobby-hero-1')).toContainText('Tuyo');
+
+  await ana.locator('#lobby-hero-4').click();
+  await expect(ana.locator('#lobby-hero-4')).toContainText('Tuyo');
+
+  await ana.locator('#lobby-ready').click();
+  await beto.locator('#lobby-ready').click();
+  await Promise.all([inGame(ana), inGame(beto)]);
+  expect(await ownHeroes(ana)).toEqual([4, 2]);
+  expect(await ownHeroes(beto)).toEqual([1, 3]);
+});

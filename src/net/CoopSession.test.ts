@@ -279,3 +279,16 @@ describe('a whole game through a real room', () => {
     expect(snapshots).toBe(0);
   });
 });
+
+describe('signals on the map', () => {
+  it('sends a signal to the server', () => {
+    session.signal('help', 300, 200);
+    expect(sent).toEqual([{ t: 'signal', signal: { kind: 'help', x: 300, y: 200 } }]);
+  });
+
+  it('hands over the signals that arrived, once, with the name of who sent them', () => {
+    session.receive({ t: 'signal', playerId: 2, kind: 'going', x: 5, y: 6 });
+    expect(session.takeSignals()).toEqual([{ playerId: 2, name: 'Beto', kind: 'going', x: 5, y: 6 }]);
+    expect(session.takeSignals()).toEqual([]);
+  });
+});

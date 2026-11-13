@@ -1,4 +1,5 @@
-import { assignHeroes, isAllowed, parseCommand } from '../core/multiplayer';
+import { distributeHeroes, heroShare, isAllowed, parseCommand } from '../core/multiplayer';
+import { findMap } from '../data/maps';
 import { createGame, step, type Command, type GameState, type Level } from '../core/simulation';
 import { hashState } from '../core/stateHash';
 import type { DifficultyId } from '../data/difficulty';
@@ -6,11 +7,14 @@ import { coopLevel } from './coopLevel';
 import {
   HASH_EVERY_TURNS,
   MAX_PLAYERS,
+  SIGNAL_EVERY_TURNS,
+  SIGNAL_KINDS,
   TURN_TICKS,
   type GameStart,
   type PlayerInfo,
   type RoomInfo,
   type ServerMessage,
+  type Signal,
 } from './protocol';
 
 const MAX_NAME_LENGTH = 16;
@@ -20,6 +24,8 @@ const KEPT_HASHES = 8;
 interface Player extends PlayerInfo {
   /** Proves who they are when they come back after losing the connection. */
   token: string;
+  /** Turn of their last signal, to keep anyone from flooding the map. */
+  lastSignalTurn: number;
 }
 
 export interface RoomOptions {
@@ -106,8 +112,10 @@ export class Room {
       ready: false,
       heroes: [],
       token: this.options.newToken(),
+      lastSignalTurn: -SIGNAL_EVERY_TURNS,
     };
     this.players.push(player);
+    this.trimChoices();
     this.send(id, { t: 'joined', playerId: id, token: player.token, room: this.info() });
     this.broadcastRoom();
     return { ok: true, player: this.publicInfo(player) };
@@ -158,12 +166,52 @@ export class Room {
     }
   }
 
+  /** In the lobby: takes a free hero for the player, or gives back one they have. */
+  pick(playerId: number, heroId: number): void {
+    const player = this.find(playerId);
+    if (!player || this.state !== 'lobby') return;
+    if (!Number.isInteger(heroId) || heroId < 1 || heroId > this.heroCount()) return;
+
+    if (player.heroes.includes(heroId)) {
+      player.heroes = player.heroes.filter((id) => id !== heroId);
+    } else {
+      const takenByOther = this.players.some((other) => other.heroes.includes(heroId));
+      if (takenByOther || player.heroes.length >= this.share()) return;
+      player.heroes = [...player.heroes, heroId];
+    }
+    this.broadcastRoom();
+  }
+
   /** An order from a player. It is passed on in the next turn, if it is theirs to give. */
   submit(playerId: number, raw: unknown): void {
     const player = this.find(playerId);
     if (!player || !player.connected || this.state !== 'playing') return;
     const command = parseCommand(raw);
     if (command && isAllowed(command, player.heroes)) this.pending.push(command);
+  }
+
+  /**
+   * A signal on the map from a player, shown to everyone. It changes nothing
+   * in the game, so it travels at once instead of waiting for a turn.
+   */
+  signal(playerId: number, raw: unknown): void {
+    const player = this.find(playerId);
+    if (!player || !player.connected || this.state !== 'playing' || !this.level) return;
+    if (this.turn - player.lastSignalTurn < SIGNAL_EVERY_TURNS) return;
+    if (typeof raw !== 'object' || raw === null) return;
+    const { kind, x, y } = raw as Record<string, unknown>;
+    if (!SIGNAL_KINDS.includes(kind as never)) return;
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    player.lastSignalTurn = this.turn;
+    this.broadcast({
+      t: 'signal',
+      playerId,
+      kind: kind as Signal['kind'],
+      x: Math.round(Math.min(Math.max(x, 0), this.level.width)),
+      y: Math.round(Math.min(Math.max(y, 0), this.level.height)),
+    });
   }
 
   /** A player's fingerprint after `turn`. A wrong one gets them the whole game back. */
@@ -219,12 +267,28 @@ export class Room {
     this.game = createGame(this.level, start.seed);
     this.state = 'playing';
 
-    const heroes = assignHeroes(this.players.length, this.game.heroes.length);
+    const heroes = distributeHeroes(
+      this.players.map((player) => player.heroes),
+      this.game.heroes.length,
+    );
     this.players.forEach((player, index) => {
       player.heroes = heroes[index];
       player.ready = false;
     });
     this.broadcast({ t: 'start', start, room: this.info() });
+  }
+
+  private heroCount(): number {
+    return findMap(this.options.mapId).level.heroes.length;
+  }
+
+  private share(): number {
+    return heroShare(this.players.length, this.heroCount());
+  }
+
+  /** After someone joins, nobody may hold more than the new, smaller share. */
+  private trimChoices(): void {
+    for (const player of this.players) player.heroes = player.heroes.slice(0, this.share());
   }
 
   /** At least one player is connected and none of the connected ones is waiting. */
