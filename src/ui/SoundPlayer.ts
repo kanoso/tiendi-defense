@@ -35,6 +35,12 @@ const SOUNDS: Record<SoundName, SoundSpec> = {
   refused: { file: 'refused', volume: 0.4, minGapMs: 200 },
 };
 
+/**
+ * The background music: one track, looped across every screen. It comes at
+ * full loudness, so it plays far below the effects to leave them room.
+ */
+const MUSIC = { file: 'music-battle', level: 0.12 };
+
 const VOLUME_KEY = 'tower-defense-heroes.volume';
 /** The on/off setting from before the game had volume levels. Only read, never written. */
 const LEGACY_MUTED_KEY = 'tower-defense-heroes.muted';
@@ -56,6 +62,11 @@ export function loadSoundsInBackground(scene: Phaser.Scene): void {
     scene.load.audio(spec.file, [`${base}.ogg`, `${base}.m4a`]);
     queued = true;
   }
+  if (!scene.cache.audio.exists(MUSIC.file)) {
+    const base = `assets/audio/${MUSIC.file}`;
+    scene.load.audio(MUSIC.file, [`${base}.ogg`, `${base}.m4a`]);
+    queued = true;
+  }
   if (queued) scene.load.start();
 }
 
@@ -67,6 +78,9 @@ export class SoundPlayer {
 
   constructor(private scene: Phaser.Scene) {
     this.volume = readVolume();
+    this.keepMusicPlaying();
+    // The music arrives last, being the largest file: start it once it is here.
+    scene.load.once(`filecomplete-audio-${MUSIC.file}`, () => this.keepMusicPlaying());
   }
 
   get muted(): boolean {
@@ -89,10 +103,36 @@ export class SoundPlayer {
   /** Moves to the next volume step: quieter each time, then back to full. */
   cycleVolume(): void {
     this.volume = nextVolume(this.volume);
+    this.keepMusicPlaying();
     try {
       localStorage.setItem(VOLUME_KEY, String(this.volume));
     } catch {
       // Storage may be unavailable; the choice then lasts only for this visit.
+    }
+  }
+
+  /**
+   * Starts the music, or matches it to the volume. It belongs to the whole game,
+   * not to a screen, so it carries on from the menu into a game and back.
+   */
+  keepMusicPlaying(): void {
+    const manager = this.scene.sound;
+    if (!this.scene.cache.audio.exists(MUSIC.file)) return;
+    // Browsers keep a page silent until the player does something.
+    if (manager.locked) {
+      manager.once('unlocked', () => this.keepMusicPlaying());
+      return;
+    }
+    const music = (manager.get(MUSIC.file) ?? manager.add(MUSIC.file, { loop: true })) as
+      | Phaser.Sound.WebAudioSound
+      | Phaser.Sound.HTML5AudioSound;
+    music.setVolume(MUSIC.level * this.volume);
+    if (this.muted) {
+      if (music.isPlaying) music.pause();
+    } else if (music.isPaused) {
+      music.resume();
+    } else if (!music.isPlaying) {
+      music.play();
     }
   }
 }

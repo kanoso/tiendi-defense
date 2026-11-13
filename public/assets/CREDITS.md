@@ -51,3 +51,17 @@ reemplazar los dos archivos.
 
 Para cambiar un sonido basta con reemplazar el archivo, o editar el volumen y la
 frecuencia en `src/ui/SoundPlayer.ts`.
+
+## Música
+
+`music-battle.ogg` y `music-battle.m4a` son **JRPG Epic Rock Battle Theme #1**, de
+**HydroGene**, con licencia [CC0](http://creativecommons.org/publicdomain/zero/1.0/):
+
+- https://opengameart.org/content/jrpg-epic-rock-battle-theme-1
+
+Se usa la parte de bucle (`jrpg_battle_loop.mp3`), que se repite sin cortes;
+convertida con ffmpeg a Ogg Vorbis (calidad 3) y a AAC (96 kb/s). El autor no
+exige crédito; se incluye como agradecimiento.
+
+El volumen de la música respecto de los efectos está en `MUSIC` dentro de
+`src/ui/SoundPlayer.ts`.
