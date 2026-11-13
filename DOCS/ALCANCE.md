@@ -1,6 +1,6 @@
 # Tower Defense Heroes — Definición y alcance
 
-Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11-11
+Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11-13
 
 ## 0. Avance
 
@@ -11,13 +11,13 @@ Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11
 | 2 — Profundidad | Hecha | Ver "Diferencias con lo planeado". |
 | 3 — Progresión | Hecha | 3 mapas (uno con doble entrada), selector de mapas, estrellas, 3 dificultades, rangos permanentes de héroes y guardado en el navegador. |
 | 4 — Pulido y publicación | Hecha | Hecho: publicado en https://kanoso.github.io/tiendi-defense/ con despliegue automático desde la rama `main`. Hecho también: controles táctiles (todo lo que hace una tecla tiene un botón en pantalla) y aviso para girar el teléfono. Hechos además: pantalla completa y modo sin fin con puntuación y récord por mapa y dificultad. También: volumen en cuatro niveles, audio en dos formatos (Ogg y AAC, este último para Safari y iPhone), sonidos cargados en segundo plano para que el juego arranque aunque el audio falle, y una revisión de rendimiento (con más de 100 enemigos, la lógica usa el 0,1 % de un cuadro y el dibujo 0,3 ms). Se puede agregar a la pantalla de inicio del teléfono (manifiesto de app web, íconos y etiquetas de Safari) y abre a pantalla completa en horizontal. Los enemigos que un héroe bloquea se dibujan lado a lado en lugar de apilados (solo en pantalla: la simulación no cambia). Sin verificar en un iPhone real. |
-| 5 — Cooperativo en línea | Hecha | Hecho: servidor propio (Node, un contenedor Docker que también sirve el juego), sala de espera con código de 4 letras, elección de héroes (cada uno elige hasta su parte; los que nadie elige se reparten al empezar), oro y vidas compartidos, oleada que empieza cuando todos están listos, vida de los enemigos +10 % por jugador adicional reconexión automática a la misma partida si se corta la conexión o se recarga la página, y señales rápidas sobre el mapa («¡Ayuda!» y «Voy yo», con botones o con las teclas H y V). Publicado en internet mediante un túnel de Cloudflare hacia el contenedor; las pruebas de dos jugadores pasan a través de él. Las pruebas de navegador, cooperativo incluido, corren en cada publicación. El sitio público no ofrece el cooperativo porque no tiene servidor. |
+| 5 — Cooperativo en línea | Hecha | Hecho: servidor propio (Node, un contenedor Docker que también sirve el juego), sala de espera con código de 4 letras, elección de héroes (cada uno elige hasta su parte; los que nadie elige se reparten al empezar), oro y vidas compartidos, oleada que empieza cuando todos están listos, vida de los enemigos +10 % por jugador adicional reconexión automática a la misma partida si se corta la conexión o se recarga la página, y señales rápidas sobre el mapa («¡Ayuda!» y «Voy yo», con botones o con las teclas H y V). Publicado en internet mediante un túnel de Cloudflare hacia el contenedor; las pruebas de dos jugadores pasan a través de él. Las pruebas de navegador, cooperativo incluido, corren en cada publicación. El sitio público (GitHub Pages) también ofrece el cooperativo: se publica apuntando al servidor en https://defender.tiendi.pe. Las pruebas automáticas son de 2 jugadores; falta una partida completa de 4 jugadores en redes distintas, que es el criterio de cierre. |
 | Extra — Avance en el servidor | Hecho | Entrar con Google (token verificado en el servidor; se guarda solo un hash del identificador) o código de jugador sin datos personales: guarda estrellas, rangos y récords en el servidor y une el avance de varios dispositivos (lo mejor de cada uno; los rangos solo si las estrellas alcanzan). |
 | Extra — Continuar partida | Hecho | La partida se guarda al terminar cada oleada, en el dispositivo y en la cuenta; el menú ofrece «Continuar» con la más reciente. Validada antes de cargarse (en el juego y en el servidor). No aplica al cooperativo. |
 
 **Diferencias con lo planeado en la fase 2**
 
-- **Música:** no se incluyó. Los efectos de sonido sí. Falta elegir una pista, que hay que escuchar antes de sumarla.
+- **Música:** no entró en la fase 2. Se agregó después: una pista en bucle (detalle en la sección 10).
 - **Animaciones:** los sprites son de una sola imagen. El movimiento se resuelve con un salto al caminar y el giro hacia donde avanzan, no con cuadros de animación.
 - **Agregado:** pausa (`P`), que figuraba en los controles pero no en ninguna fase.
 - **Agregado:** el guerrero suelta a un enemigo menor para frenar a uno más peligroso. Sin esa regla los jefes pasaban sin ser atacados.
@@ -28,7 +28,7 @@ Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11
 - **Dificultad:** Fácil (enemigos con 20 % menos de vida y 30 % más de oro inicial), Normal y Difícil (15 % más de vida y 10 % menos de oro).
 - **Rangos de héroe:** cada héroe tiene 3 rangos permanentes que cuestan 1, 2 y 3 estrellas. Cada rango suma 10 % de daño y de vida y quita 7 % de recarga a sus habilidades. Llevar a los cuatro al máximo cuesta 24 estrellas.
 - **Desbloqueo:** un mapa se abre al ganar el anterior en cualquier dificultad.
-- **Guardado:** en el navegador. No hay cuentas: el progreso no se comparte entre dispositivos.
+- **Guardado:** en el navegador. Más tarde se sumó guardarlo también en el servidor (ver "Extra — Avance en el servidor"), que lo comparte entre dispositivos.
 
 **Comandos del proyecto**
 
@@ -57,7 +57,7 @@ Una partida dura entre 10 y 15 minutos.
 **Fuera de alcance** (en todas las fases de este documento)
 
 - Multijugador competitivo (jugador contra jugador). El cooperativo entra en la fase 5.
-- Cuentas de usuario y base de datos. El progreso se guarda en el navegador.
+- ~~Cuentas de usuario y base de datos~~ — incorporado después de la fase 5: entrar con Google o con un código de jugador guarda el avance en el servidor. Sigue funcionando sin cuenta, con el progreso en el navegador.
 - Servidor propio en las fases 0 a 4. La fase 5 es la única que puede requerirlo.
 - Gráficos 3D.
 - Compras o monetización.
@@ -232,6 +232,6 @@ De 2 a 4 jugadores defienden juntos el mismo mapa.
 - Ambientación y nombres de los 4 héroes.
 - ~~Origen del arte~~ — resuelto: paquetes de Kenney con licencia CC0 (detalle en `public/assets/CREDITS.md`). Se puede reemplazar por arte propio sin tocar la lógica.
 - ~~Música de fondo~~ — resuelto: «JRPG Epic Rock Battle Theme #1» de HydroGene (CC0), en bucle, al 12 % del volumen elegido.
-- Si el juego debe funcionar en móvil desde el MVP o recién en la fase 4.
+- ~~Si el juego debe funcionar en móvil desde el MVP o recién en la fase 4~~ — resuelto: en la fase 4 (controles táctiles, aviso para girar el teléfono, instalable en la pantalla de inicio).
 - ~~Fase 5: servidor autoritativo o conexión directa entre navegadores~~ — resuelto: servidor propio que reparte las órdenes por turnos de 50 ms; cada navegador simula la misma partida y el servidor guarda la copia de referencia, que envía completa si alguno se desvía o se reconecta.
 - ~~Fase 5: cómo publicar el servidor en internet~~ — resuelto: túnel de Cloudflare hacia el contenedor, que sirve el juego y el cooperativo desde la misma dirección.
