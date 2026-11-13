@@ -102,17 +102,31 @@ export class HeroCards {
     }
   }
 
-  sync(game: GameState, selectedHeroId: number | null, aim: Aim | null): void {
+  /**
+   * `owners` is only given in a shared game: it names the player behind each
+   * hero and tells which ones are this player's.
+   */
+  sync(
+    game: GameState,
+    selectedHeroId: number | null,
+    aim: Aim | null,
+    owners?: { own: readonly number[]; nameOf: (heroId: number) => string | null },
+  ): void {
     this.bars.clear();
     for (const card of this.cards) {
       const hero = game.heroes.find((candidate) => candidate.id === card.heroId);
       if (!hero) continue;
 
       card.frame.setStrokeStyle(2, hero.id === selectedHeroId ? SELECTION_COLOR : DIM_BORDER);
-      card.title.setText(`${hero.id}  ${HERO_STYLE[hero.type].name} · Nv ${hero.level}`);
+      const mine = !owners || owners.own.includes(hero.id);
+      const owner = owners && !mine ? ` · ${owners.nameOf(hero.id) ?? '—'}` : '';
+      card.title.setText(`${hero.id}  ${HERO_STYLE[hero.type].name} · Nv ${hero.level}${owner}`);
+      // Another player's hero is shown, but dimmed: it cannot be ordered from here.
+      card.frame.setAlpha(mine ? 1 : 0.6);
+      card.title.setAlpha(mine ? 1 : 0.7);
 
       card.abilityButtons.forEach((button, index) => {
-        const ready = canUseAbility(game, this.level, hero, index);
+        const ready = mine && canUseAbility(game, this.level, hero, index);
         const aiming = aim?.heroId === hero.id && aim.ability === index;
         button.text.setText(`${ABILITY_KEYS[index]} ${this.abilityStatus(hero, index, aiming)}`);
         setColorIfChanged(button.text, ready ? '#ffe066' : '#a9b3a0');

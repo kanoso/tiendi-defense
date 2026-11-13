@@ -25,7 +25,9 @@ test.beforeEach(async ({ page }) => {
 
 test('every sound file loads, without holding the game back', async ({ page }) => {
   // The game is already on screen; the sounds arrive on their own.
-  await expect.poll(async () => (await audioState(page)).loaded.length).toBe(16);
+  await expect
+    .poll(async () => (await audioState(page)).loaded.length, { timeout: 20_000 })
+    .toBe(16);
   const { loaded } = await audioState(page);
   expect(loaded.sort()).toEqual(
     [

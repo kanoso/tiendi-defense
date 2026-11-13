@@ -45,9 +45,40 @@ npm run dev
 | `npm run e2e:webkit` | Las mismas pruebas en WebKit, el motor de Safari. En Windows falla la de carga de sonidos, porque esa versión de WebKit no trae audio |
 | `npm run balance` | Simula partidas con jugadores automáticos: hasta dónde llegan y cuánto cuesta cada tick |
 | `npm run build` | Genera la versión para publicar en `dist/` |
+| `npm run server` | Construye el juego y arranca el servidor del cooperativo, que también sirve el juego, en el puerto 8787 |
 
 Cada cambio en la rama `main` se publica solo en GitHub Pages, siempre que las
 pruebas de la lógica pasen.
+
+## Cooperativo
+
+De 2 a 4 jugadores defienden el mismo mapa, cada uno con una parte de los
+héroes. Necesita un servidor, así que el sitio público no lo ofrece: el botón
+«Cooperativo» del menú solo aparece cuando el juego se abre desde un servidor
+del cooperativo.
+
+Para jugarlo en una red local:
+
+```
+npm run server
+```
+
+y cada jugador abre `http://<dirección de esa máquina>:8787`. Uno crea la sala
+y comparte el código de 4 letras; la partida empieza cuando todos están listos.
+
+Con Docker, después de `npm run build` y `npm run build:server`:
+
+```
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+`HOST_PORT` cambia el puerto. `npm run e2e` prueba el cooperativo con dos
+navegadores contra un servidor local; `COOP_SERVER=http://host:puerto` apunta
+esas pruebas a un servidor que ya esté en marcha.
+
+Todos los jugadores simulan la misma partida: el servidor solo reparte las
+órdenes por turnos y guarda una copia de referencia, que envía completa si
+alguien se desvía o vuelve tras perder la conexión.
 
 ## Cómo está armado
 

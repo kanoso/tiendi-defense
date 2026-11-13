@@ -3,6 +3,7 @@ import { DIFFICULTIES, findDifficulty, type DifficultyId } from '../data/difficu
 import { MAP_IDS, MAPS, type GameMap } from '../data/maps';
 import { findMode, GAME_MODES, type GameMode } from '../data/modes';
 import { GAME_HEIGHT, GAME_WIDTH } from '../data/rules';
+import { coopServerBase, isCoopServerUp } from '../net/CoopLink';
 import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
 import { FONT, GROUND_SCALE, HERO_STYLE, SELECTION_COLOR } from '../entities/styles';
 import {
@@ -26,6 +27,7 @@ import {
   saveProgress,
 } from '../progress/storage';
 import { RANK_BONUS } from '../progress/upgrades';
+import { openLobby } from '../ui/lobby';
 
 const MAX_STARS = 3;
 const PANEL_COLOR = 0x22281d;
@@ -96,6 +98,8 @@ export class MenuScene extends Phaser.Scene {
   heroTiles: HeroTile[] = [];
   difficulty: DifficultyId = 'normal';
   available = 0;
+  /** Where the co-op button is, when a server is available. */
+  coopButton: { x: number; y: number } | null = null;
   /** Where the full screen button is, when the browser allows one. */
   fullscreenButton: { x: number; y: number } | null = null;
 
@@ -131,6 +135,8 @@ export class MenuScene extends Phaser.Scene {
     this.heading(GAME_WIDTH / 2, 44, 'Tower Defense Heroes', 38);
     this.fullscreenButton = null;
     this.drawFullscreenButton();
+    this.coopButton = null;
+    void this.offerCoop();
     this.drawChoices();
     this.drawMaps(progress);
     this.heading(
@@ -164,6 +170,50 @@ export class MenuScene extends Phaser.Scene {
       this.scale.off('leavefullscreen', refresh);
     });
     this.fullscreenButton = { x, y: 30 };
+  }
+
+  // --- co-op -----------------------------------------------------------------
+
+  /**
+   * Shows the co-op button only when a server is there to answer it. The public
+   * site has none, so the button would only lead to an error.
+   */
+  private async offerCoop(): Promise<void> {
+    const server = coopServerBase();
+    if (!(await isCoopServerUp(server)) || !this.scene.isActive()) return;
+
+    const x = 16 + 75;
+    const frame = this.panel(x, 30, 150, 32, true);
+    this.clickable(frame, () => this.openCoopLobby(server));
+    this.label(x, 30, 'Cooperativo', 15, '#ffe066', true);
+    this.coopButton = { x, y: 30 };
+  }
+
+  private openCoopLobby(server: string): void {
+    // While the lobby is open, typing a name must not pick a map.
+    const keyboard = this.input.keyboard;
+    if (keyboard) keyboard.enabled = false;
+    this.input.enabled = false;
+    const restore = (): void => {
+      if (keyboard) keyboard.enabled = true;
+      this.input.enabled = true;
+    };
+    openLobby({
+      server,
+      mapId: this.coopMapId(),
+      difficulty: this.difficulty,
+      onClose: restore,
+      onStart: (link) => {
+        restore();
+        this.scene.start('game', { coop: link });
+      },
+    });
+  }
+
+  /** A room created here plays the last map this player has unlocked. */
+  private coopMapId(): string {
+    const unlocked = this.cards.filter((card) => card.unlocked);
+    return unlocked[unlocked.length - 1]?.mapId ?? MAPS[0].id;
   }
 
   // --- mode and difficulty -------------------------------------------------

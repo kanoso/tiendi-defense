@@ -11,7 +11,7 @@ Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11
 | 2 — Profundidad | Hecha, salvo la música | Ver "Diferencias con lo planeado". |
 | 3 — Progresión | Hecha | 3 mapas (uno con doble entrada), selector de mapas, estrellas, 3 dificultades, rangos permanentes de héroes y guardado en el navegador. |
 | 4 — Pulido y publicación | Hecha | Hecho: publicado en https://kanoso.github.io/tiendi-defense/ con despliegue automático desde la rama `main`. Hecho también: controles táctiles (todo lo que hace una tecla tiene un botón en pantalla) y aviso para girar el teléfono. Hechos además: pantalla completa y modo sin fin con puntuación y récord por mapa y dificultad. También: volumen en cuatro niveles, audio en dos formatos (Ogg y AAC, este último para Safari y iPhone), sonidos cargados en segundo plano para que el juego arranque aunque el audio falle, y una revisión de rendimiento (con más de 100 enemigos, la lógica usa el 0,1 % de un cuadro y el dibujo 0,3 ms). Sin verificar en un iPhone real. |
-| 5 — Cooperativo en línea | Pendiente | |
+| 5 — Cooperativo en línea | En curso | Hecho: servidor propio (Node, un contenedor Docker que también sirve el juego), sala de espera con código de 4 letras, reparto automático de héroes, oro y vidas compartidos, oleada que empieza cuando todos están listos, vida de los enemigos +10 % por jugador adicional y reconexión automática a la misma partida si se corta la conexión. Probado con dos navegadores en red local. Falta: señales rápidas sobre el mapa, elegir los héroes (hoy los reparte el servidor), volver a la partida tras recargar la página y salida a internet. El sitio público no ofrece el cooperativo porque no tiene servidor. |
 
 **Diferencias con lo planeado en la fase 2**
 
@@ -231,4 +231,5 @@ De 2 a 4 jugadores defienden juntos el mismo mapa.
 - ~~Origen del arte~~ — resuelto: paquetes de Kenney con licencia CC0 (detalle en `public/assets/CREDITS.md`). Se puede reemplazar por arte propio sin tocar la lógica.
 - Música de fondo: elegir una pista con licencia libre.
 - Si el juego debe funcionar en móvil desde el MVP o recién en la fase 4.
-- Fase 5: servidor autoritativo o conexión directa entre navegadores. Se decide al llegar a esa fase.
+- ~~Fase 5: servidor autoritativo o conexión directa entre navegadores~~ — resuelto: servidor propio que reparte las órdenes por turnos de 50 ms; cada navegador simula la misma partida y el servidor guarda la copia de referencia, que envía completa si alguno se desvía o se reconecta.
+- Fase 5: cómo publicar el servidor en internet (hoy solo funciona en red local).

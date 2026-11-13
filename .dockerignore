@@ -1,0 +1,4 @@
+# The image is made from the built folders only.
+*
+!dist
+!server-dist

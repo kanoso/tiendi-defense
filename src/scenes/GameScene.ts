@@ -18,6 +18,8 @@ import {
 import { applyDifficulty, findDifficulty, type DifficultyId } from '../data/difficulty';
 import { asEndless } from '../data/endless';
 import { findMap, MAPS, type GameMap } from '../data/maps';
+import type { CoopLink } from '../net/CoopLink';
+import { coopLevel } from '../net/coopLevel';
 import type { GameMode } from '../data/modes';
 import { CAST_EFFECT_TICKS, type CastEffect } from '../entities/abilityEffects';
 import { drawBoard } from '../entities/board';
@@ -56,6 +58,13 @@ const TOUCH_SUMMARY =
 
 /** Extra distance around a hero or a build slot that still counts as touching it. */
 const TAP_MARGIN = 10;
+
+// A shared game normally plays one tick per frame; these let it catch up
+// when it has fallen behind the turns the server already confirmed.
+const MAX_STEPS_PER_FRAME = 4;
+/** Ticks of delay tolerated before hurrying. */
+const LAG_TICKS = 12;
+const CATCH_UP_STEPS = 8;
 
 const TUTORIAL_SEEN_KEY = 'tower-defense-heroes.tutorial-seen';
 
@@ -103,6 +112,10 @@ interface TowerView {
 export class GameScene extends Phaser.Scene {
   private map: GameMap = MAPS[0];
   private difficulty: DifficultyId = 'normal';
+  /** The connection to a shared game, or null when playing alone. */
+  private coop: CoopLink | null = null;
+  /** Time waiting to be turned into ticks of a shared game. */
+  private coopClock = 0;
   private mode: GameMode = 'campaign';
   /** Whether the endless game on screen has been saved, so it is saved only once. */
   private endlessRecorded = false;
@@ -167,8 +180,25 @@ export class GameScene extends Phaser.Scene {
     super('game');
   }
 
-  /** Both come from the menu. A restart passes nothing and keeps what it had. */
-  init(data?: { mapId?: string; difficulty?: DifficultyId; mode?: GameMode }): void {
+  /** All of it comes from the menu. A restart passes nothing and keeps what it had. */
+  init(data?: {
+    mapId?: string;
+    difficulty?: DifficultyId;
+    mode?: GameMode;
+    coop?: CoopLink;
+  }): void {
+    // A shared game: the server decided the map and the difficulty, and every
+    // player has to build exactly the same level from what it sent.
+    const start = data?.coop?.session.start;
+    if (data?.coop && start) {
+      this.coop = data.coop;
+      this.map = findMap(start.mapId);
+      this.difficulty = start.difficulty;
+      this.mode = 'campaign';
+      this.level = coopLevel(start.mapId, start.difficulty, start.playerCount);
+      return;
+    }
+    if (data?.mapId) this.coop = null;
     if (data?.mapId) this.map = findMap(data.mapId);
     if (data?.difficulty) this.difficulty = data.difficulty;
     if (data?.mode) this.mode = data.mode;
@@ -188,7 +218,8 @@ export class GameScene extends Phaser.Scene {
     // slow, blocked or missing. Each sound simply stays quiet until it arrives.
     loadSoundsInBackground(this);
     // The scene instance is reused on restart, so every field starts over here.
-    this.game_ = createGame(this.level, Date.now());
+    this.game_ = createGame(this.level, this.coop?.session.start?.seed ?? Date.now());
+    this.coopClock = 0;
     this.stepper = createFixedStepper(STEP_MS);
     this.pendingCommands = [];
     this.enemyViews.clear();
@@ -198,11 +229,14 @@ export class GameScene extends Phaser.Scene {
     this.knownLevels.clear();
     this.castEffects = [];
     this.shownCasts.clear();
-    this.selectedHeroId = this.game_.heroes[0]?.id ?? null;
+    this.selectedHeroId = this.coop
+      ? (this.coop.session.ownHeroes()[0] ?? null)
+      : (this.game_.heroes[0]?.id ?? null);
     this.aim = null;
     this.speed = 1;
     this.paused = false;
-    this.tutorial = new Tutorial(hasSeenTutorial());
+    // A shared game is no place for a tutorial that waits on one player.
+    this.tutorial = new Tutorial(this.coop !== null || hasSeenTutorial());
     this.seenPhase = this.game_.phase;
     this.seenTowers = 0;
     this.sounds = new SoundPlayer(this);
@@ -218,12 +252,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, deltaMs: number): void {
-    // Pausing and speeding up only change how much time the simulation is fed.
-    const elapsed = this.paused ? 0 : deltaMs * this.speed;
-    const alpha = this.stepper.advance(elapsed, () => {
-      step(this.game_, this.level, this.pendingCommands);
-      this.pendingCommands = [];
-    });
+    const alpha = this.coop ? this.advanceShared(this.coop, deltaMs) : this.advanceAlone(deltaMs);
 
     for (const event of soundEventsSince(this.heard, this.game_)) this.sounds.play(event);
     this.heard = listen(this.game_);
@@ -249,6 +278,55 @@ export class GameScene extends Phaser.Scene {
     this.syncInterface();
   }
 
+  /** A game on this machine only: the clock here decides how fast it goes. */
+  private advanceAlone(deltaMs: number): number {
+    // Pausing and speeding up only change how much time the simulation is fed.
+    const elapsed = this.paused ? 0 : deltaMs * this.speed;
+    return this.stepper.advance(elapsed, () => {
+      step(this.game_, this.level, this.pendingCommands);
+      this.pendingCommands = [];
+    });
+  }
+
+  /**
+   * A shared game: this machine plays at its own steady pace, but never past
+   * the turns the server has confirmed, and only with the orders they carry.
+   */
+  private advanceShared(coop: CoopLink, deltaMs: number): number {
+    const session = coop.session;
+    const snapshot = session.takeSnapshot();
+    if (snapshot) {
+      // The server sent the whole game: this copy had drifted, or just came back.
+      this.game_ = snapshot;
+      this.heard = listen(snapshot);
+      this.castEffects = [];
+      this.shownCasts.clear();
+      for (const hero of snapshot.heroes) {
+        if (hero.lastCast) this.shownCasts.set(hero.id, hero.lastCast.tick);
+      }
+      this.coopClock = 0;
+    }
+
+    const play = (): void => {
+      step(this.game_, this.level, session.commandsFor(this.game_.tick));
+      session.played(this.game_.tick, this.game_);
+    };
+    this.coopClock += deltaMs;
+    let steps = 0;
+    while (this.coopClock >= STEP_MS && steps < MAX_STEPS_PER_FRAME && session.canStep(this.game_.tick)) {
+      play();
+      this.coopClock -= STEP_MS;
+      steps++;
+    }
+    // Fallen well behind (a slow frame, a tab in the background): hurry up.
+    for (let extra = 0; extra < CATCH_UP_STEPS && session.ticksBehind(this.game_.tick) > LAG_TICKS; extra++) {
+      play();
+    }
+    // Waiting for the server: do not let unspent time pile up into a later rush.
+    if (!session.canStep(this.game_.tick)) this.coopClock = Math.min(this.coopClock, STEP_MS);
+    return session.canStep(this.game_.tick) ? Math.min(1, this.coopClock / STEP_MS) : 0;
+  }
+
   // --- input -------------------------------------------------------------
 
   private bindInput(): void {
@@ -265,7 +343,7 @@ export class GameScene extends Phaser.Scene {
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
     keyboard.on('keydown', () => (this.usingTouch = false));
-    keyboard.on('keydown-SPACE', () => this.issue({ type: 'startWave' }));
+    keyboard.on('keydown-SPACE', () => this.startWaveOrToggleReady());
     keyboard.on('keydown-F', () => this.toggleSpeed());
     keyboard.on('keydown-P', () => this.togglePause());
     keyboard.on('keydown-M', () => this.toggleSound());
@@ -285,7 +363,7 @@ export class GameScene extends Phaser.Scene {
       if (isOver(this.game_) || this.paused) this.goToMenu();
     });
     keyboard.on('keydown-R', () => {
-      if (isOver(this.game_)) this.scene.restart();
+      if (isOver(this.game_) && !this.coop) this.scene.restart();
     });
   }
 
@@ -298,8 +376,21 @@ export class GameScene extends Phaser.Scene {
       this.refuse('Juego en pausa: pulsa P para continuar');
       return;
     }
+    if (this.coop) {
+      // In a shared game the order goes to the server and comes back in a turn,
+      // for everyone at once.
+      this.coop.session.order(command);
+      return;
+    }
     this.pendingCommands.push(command);
     if (command.type === 'moveHero') this.tutorial.handle('heroMoved');
+  }
+
+  /** Alone, this starts the wave. Together, it says (or takes back) "I am ready". */
+  private startWaveOrToggleReady(): void {
+    if (!this.coop) return this.issue({ type: 'startWave' });
+    if (this.game_.phase !== 'preparing') return;
+    this.coop.session.setReady(!this.coop.session.isReady());
   }
 
   private toggleSound(): void {
@@ -316,6 +407,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private goToMenu(): void {
+    // Leaving a shared game closes the connection; the others play on.
+    this.coop?.leave();
+    this.coop = null;
     this.scene.start('menu');
   }
 
@@ -330,12 +424,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private toggleSpeed(): void {
+    if (this.coop) return this.refuse('La velocidad no se puede cambiar en cooperativo');
     this.speed = this.speed === 1 ? 2 : 1;
   }
 
   /** Saves the result the moment the game is won, so closing the tab cannot lose it. */
   private recordVictoryOnce(): void {
-    if (this.game_.phase !== 'won' || this.earnedStars !== null) return;
+    // Stars are earned alone: a shared game does not touch personal progress.
+    if (this.coop || this.game_.phase !== 'won' || this.earnedStars !== null) return;
     this.earnedStars = starsFor(this.game_.lives, this.level.startingLives);
     saveProgress(recordVictory(loadProgress(), this.map.id, this.difficulty, this.earnedStars));
   }
@@ -352,6 +448,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private togglePause(): void {
+    if (this.coop) return this.refuse('No hay pausa en cooperativo');
     if (isOver(this.game_)) return;
     this.paused = !this.paused;
     if (this.paused) {
@@ -408,6 +505,10 @@ export class GameScene extends Phaser.Scene {
 
   private selectHero(heroId: number): void {
     if (!this.game_.heroes.some((hero) => hero.id === heroId)) return;
+    if (this.coop && !this.coop.session.ownHeroes().includes(heroId)) {
+      const owner = this.coop.session.ownerName(heroId);
+      return this.refuse(owner ? `Ese héroe lo controla ${owner}` : 'Ese héroe no es tuyo');
+    }
     this.selectedHeroId = heroId;
     this.aim = null;
     this.sounds.play('select');
@@ -691,7 +792,7 @@ export class GameScene extends Phaser.Scene {
     this.fullscreenButton = this.scale.fullscreen.available
       ? topButton('', 84, () => this.scale.toggleFullscreen(), false, 'pointerup')
       : null;
-    const wave = topButton('Iniciar oleada', 132, () => this.issue({ type: 'startWave' }), true);
+    const wave = topButton('Iniciar oleada', 132, () => this.startWaveOrToggleReady(), true);
 
     this.add
       .text(width - 16, 50, this.describeGame(), {
@@ -755,9 +856,23 @@ export class GameScene extends Phaser.Scene {
     this.controls = { wave, speed, pause, sound, skip, resume, pauseMenu, retry, endMenu };
   }
 
+  /** Who is in the shared game and who is still needed for the next wave. */
+  private describePlayers(coop: CoopLink): string {
+    if (coop.status === 'reconnecting') return 'Se perdió la conexión. Reconectando…';
+    if (coop.status === 'closed') return 'Sin conexión con el servidor. Vuelve al menú para salir.';
+    const waiting = this.game_.phase === 'preparing';
+    const players = (coop.session.room?.players ?? []).map((player) => {
+      if (!player.connected) return `${player.name} (desconectado)`;
+      return waiting ? `${player.name} ${player.ready ? '✓' : '…'}` : player.name;
+    });
+    const lead = waiting ? 'La oleada empieza cuando todos están listos' : 'Jugadores';
+    return `${lead}:  ${players.join('   ')}`;
+  }
+
   /** The map, difficulty and mode being played, for the corner of the screen. */
   private describeGame(): string {
     const parts = [this.map.name, findDifficulty(this.difficulty).name];
+    if (this.coop) parts.push(`Sala ${this.coop.session.room?.code ?? ''}`);
     if (this.mode === 'endless') parts.push('Sin fin');
     return parts.join(' · ');
   }
@@ -797,14 +912,17 @@ export class GameScene extends Phaser.Scene {
 
     const lesson = this.tutorial.text;
     const controls = this.usingTouch ? TOUCH_SUMMARY : KEY_SUMMARY;
-    this.hint.setText(lesson ?? controls);
+    this.hint.setText(lesson ?? (this.coop ? this.describePlayers(this.coop) : controls));
     setColorIfChanged(this.hint, lesson ? '#ffe066' : '#ffffff');
 
     this.controls.wave.setVisible(game.phase === 'preparing');
-    this.controls.speed.setText(`x${this.speed}`);
+    if (this.coop) {
+      this.controls.wave.setText(this.coop.session.isReady() ? 'Esperando…' : 'Estoy listo');
+    }
+    this.controls.speed.setText(`x${this.speed}`).setVisible(!this.coop);
     this.controls.sound.setText(volumeLabel(this.sounds.volume));
     this.fullscreenButton?.setText(this.scale.isFullscreen ? 'Ventana' : 'Completa');
-    this.controls.pause.setVisible(!over);
+    this.controls.pause.setVisible(!over && !this.coop);
     this.controls.skip.setVisible(lesson !== null);
 
     const stars = this.earnedStars ?? 0;
@@ -814,10 +932,16 @@ export class GameScene extends Phaser.Scene {
     this.bigTitle.setText(title).setVisible(over || this.paused);
     this.controls.resume.setVisible(this.paused && !over);
     this.controls.pauseMenu.setVisible(this.paused && !over);
-    this.controls.retry.setVisible(over);
+    this.controls.retry.setVisible(over && !this.coop);
     this.controls.endMenu.setVisible(over);
 
-    this.heroCards.sync(game, this.selectedHeroId, this.aim);
+    const session = this.coop?.session;
+    this.heroCards.sync(
+      game,
+      this.selectedHeroId,
+      this.aim,
+      session && { own: session.ownHeroes(), nameOf: (heroId) => session.ownerName(heroId) },
+    );
     this.towerMenu.sync(game.gold);
   }
 }

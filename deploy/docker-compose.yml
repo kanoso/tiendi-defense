@@ -1,0 +1,17 @@
+# Runs the co-op server on its own, apart from anything else on the machine.
+# HOST_PORT is the port players open in their browser.
+name: tower-defense-heroes
+services:
+  game:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: tower-defense-heroes:latest
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8787}:8787"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 1.0
