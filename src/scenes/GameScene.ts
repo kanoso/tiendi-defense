@@ -54,6 +54,9 @@ import { volumeLabel } from '../ui/volume';
 
 const HERO_KEYS = ['ONE', 'TWO', 'THREE', 'FOUR'];
 
+/** How long a first ask to leave a shared game waits for the second. */
+const LEAVE_CONFIRM_MS = 3000;
+
 const KEY_SUMMARY =
   '1-4: héroe · clic: mover · Q y W: habilidades · clic en +: torre · F: velocidad · P: pausa · M: volumen';
 
@@ -172,7 +175,9 @@ export class GameScene extends Phaser.Scene {
     Phaser.GameObjects.Text
   > &
     // Speed and pause only exist alone; the signals only in a shared game.
-    Partial<Record<'speed' | 'pause' | 'help' | 'going', Phaser.GameObjects.Text>>;
+    Partial<Record<'speed' | 'pause' | 'help' | 'going' | 'leave', Phaser.GameObjects.Text>>;
+  /** When the player last asked to leave a shared game; a second ask soon after confirms. */
+  private leaveAskedAt: number | null = null;
   /** Signals other players (and this one) put on the map. */
   private signalMarks!: SignalMarks;
   /** A signal button was pressed: the next tap on the map places it. */
@@ -256,6 +261,7 @@ export class GameScene extends Phaser.Scene {
     const ticket = this.coop?.session.rejoinTicket();
     if (ticket) saveTicket(tabStore(), ticket);
     this.armedSignal = null;
+    this.leaveAskedAt = null;
     this.sounds = new SoundPlayer(this);
     this.heard = listen(this.game_);
     this.earnedStars = null;
@@ -383,6 +389,7 @@ export class GameScene extends Phaser.Scene {
     // Back to the map picker: after the game ends, or from the pause screen.
     keyboard.on('keydown-ENTER', () => {
       if (isOver(this.game_) || this.paused) this.goToMenu();
+      else if (this.coop) this.askToLeave('Pulsa Enter otra vez para dejar la partida. Los demás siguen jugando.');
     });
     keyboard.on('keydown-R', () => {
       if (isOver(this.game_) && !this.coop) this.scene.restart();
@@ -426,6 +433,20 @@ export class GameScene extends Phaser.Scene {
   private skipTutorial(): void {
     this.tutorial.skip();
     rememberTutorialSeen();
+  }
+
+  /**
+   * Leaving a shared game takes two asks in a row: a stray touch must not throw
+   * a player out of a game others are counting on.
+   */
+  private askToLeave(confirmHint: string): void {
+    const now = this.time.now;
+    if (this.leaveAskedAt !== null && now - this.leaveAskedAt < LEAVE_CONFIRM_MS) {
+      this.goToMenu();
+      return;
+    }
+    this.leaveAskedAt = now;
+    this.showNotice(confirmHint);
   }
 
   private goToMenu(): void {
@@ -864,6 +885,11 @@ export class GameScene extends Phaser.Scene {
     const speed = this.coop ? undefined : topButton('', 48, () => this.toggleSpeed());
     const going = this.coop ? topButton(SIGNAL_STYLE.going.label, 76, () => this.armSignal('going')) : undefined;
     const help = this.coop ? topButton(SIGNAL_STYLE.help.label, 76, () => this.armSignal('help')) : undefined;
+    const leave = this.coop
+      ? topButton('Salir', 56, () =>
+          this.askToLeave('Toca «Salir» otra vez para dejar la partida. Los demás siguen jugando.'),
+        )
+      : undefined;
     // Some browsers, the iPhone's among them, do not let a page go full screen.
     this.fullscreenButton = this.scale.fullscreen.available
       ? topButton('', 84, () => this.scale.toggleFullscreen(), false, 'pointerup')
@@ -935,6 +961,7 @@ export class GameScene extends Phaser.Scene {
       pause,
       help,
       going,
+      leave,
       sound,
       skip,
       resume,
@@ -947,7 +974,7 @@ export class GameScene extends Phaser.Scene {
   /** Who is in the shared game and who is still needed for the next wave. */
   private describePlayers(coop: CoopLink): string {
     if (coop.status === 'reconnecting') return 'Se perdió la conexión. Reconectando…';
-    if (coop.status === 'closed') return 'Sin conexión con el servidor. Vuelve al menú para salir.';
+    if (coop.status === 'closed') return 'Sin conexión con el servidor. Toca «Salir» dos veces para volver al menú.';
     const waiting = this.game_.phase === 'preparing';
     const players = (coop.session.room?.players ?? []).map((player) => {
       if (!player.connected) return `${player.name} (desconectado)`;
@@ -1015,6 +1042,7 @@ export class GameScene extends Phaser.Scene {
     this.controls.sound.setText(volumeLabel(this.sounds.volume));
     this.fullscreenButton?.setText(this.scale.isFullscreen ? 'Ventana' : 'Completa');
     this.controls.pause?.setVisible(!over);
+    this.controls.leave?.setVisible(!over);
     this.controls.skip.setVisible(lesson !== null);
 
     const stars = this.earnedStars ?? 0;

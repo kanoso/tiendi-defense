@@ -301,3 +301,26 @@ test('players choose their heroes in the lobby, and the rest are handed out', as
   expect(await ownHeroes(ana)).toEqual([4, 2]);
   expect(await ownHeroes(beto)).toEqual([1, 3]);
 });
+
+test('a player can leave a shared game for the menu, with a second tap to confirm', async ({ browser }) => {
+  const { ana, beto } = await startTogether(browser);
+  await tapControl(beto, 'leave');
+  // One tap only asks: a stray touch must not throw anyone out of a shared game.
+  await expect.poll(async () => (await snapshot(beto)).notice).toContain('otra vez');
+  expect(await beto.evaluate(() => (window as any).__game.scene.isActive('game'))).toBe(true);
+
+  await tapControl(beto, 'leave');
+  await beto.waitForFunction(() => (window as any).__game.scene.isActive('menu'));
+  // Ana plays on, and sees that Beto left.
+  await expect
+    .poll(() => ana.evaluate(() => (window as any).__game.scene.getScene('game').hint.text))
+    .toContain('Beto (desconectado)');
+});
+
+test('the Enter key also leaves a shared game, pressed twice', async ({ browser }) => {
+  const { beto } = await startTogether(browser);
+  await beto.keyboard.press('Enter');
+  expect(await beto.evaluate(() => (window as any).__game.scene.isActive('game'))).toBe(true);
+  await beto.keyboard.press('Enter');
+  await beto.waitForFunction(() => (window as any).__game.scene.isActive('menu'));
+});

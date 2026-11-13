@@ -70,6 +70,8 @@ nadie elija se reparten al empezar, y la partida empieza cuando todos están
 listos. Durante el juego, «¡Ayuda!» y «Voy yo» (o las teclas H y V, donde esté
 el puntero) marcan un punto del mapa para los demás. Si se corta la conexión o
 se recarga la página, el juego vuelve solo a la misma partida.
+«Salir» (dos toques seguidos, o Enter dos veces) deja la partida y vuelve al
+menú; los demás siguen jugando.
 
 Con Docker, después de `npm run build` y `npm run build:server`:
 
