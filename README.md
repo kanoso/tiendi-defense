@@ -53,9 +53,10 @@ pruebas de la lógica pasen.
 ## Cooperativo
 
 De 2 a 4 jugadores defienden el mismo mapa, cada uno con una parte de los
-héroes. Necesita un servidor, así que el sitio público no lo ofrece: el botón
-«Cooperativo» del menú solo aparece cuando el juego se abre desde un servidor
-del cooperativo.
+héroes. Necesita un servidor: el botón «Cooperativo» del menú solo aparece
+cuando hay uno que responde. El sitio público usa el servidor indicado en
+`VITE_COOP_SERVER` al construirlo (ver `.github/workflows/deploy.yml`), que
+debe incluir el dominio del sitio en `ALLOWED_ORIGINS`.
 
 Para jugarlo en una red local:
 
