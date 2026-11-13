@@ -116,6 +116,8 @@ test('the menu button shows the code is in use once the panel is closed', async 
         const menu = (window as any).__game.scene.getScene('menu');
         return menu.children.list.some((child: any) => child.text === 'Mi código');
       }),
+      // The menu first brings the progress up to date, over the network.
+      { timeout: 15_000 },
     )
     .toBe(true);
 });
