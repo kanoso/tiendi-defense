@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { AccountStore, createAccountsApi } from './accounts';
 import { findDifficulty } from '../src/data/difficulty';
 import type { ServerMessage } from '../src/net/protocol';
 import { Room } from '../src/net/room';
@@ -29,6 +30,8 @@ export interface GameServerOptions {
    * the published game, for instance, when it lives on another address.
    */
   allowedOrigins?: readonly string[];
+  /** Folder where player accounts are kept. Without one, accounts are not offered. */
+  dataDir?: string;
 }
 
 export interface GameServer {
@@ -71,6 +74,10 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
   const turnMs = options.turnMs ?? 50;
   const abandonedRoomMs = options.abandonedRoomMs ?? 5 * 60_000;
   const staticRoot = options.staticDir ? path.resolve(options.staticDir) : null;
+  const accounts = createAccountsApi(
+    options.dataDir ? new AccountStore(path.resolve(options.dataDir)) : null,
+    options.allowedOrigins ?? [],
+  );
 
   const rooms = new Map<string, Room>();
   /** The live connection of each player, per room. */
@@ -249,9 +256,10 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
         vary: 'Origin',
         ...(allowed ? { 'access-control-allow-origin': origin } : {}),
       });
-      response.end(JSON.stringify({ ok: true, rooms: rooms.size, players }));
+      response.end(JSON.stringify({ ok: true, rooms: rooms.size, players, accounts: Boolean(options.dataDir) }));
       return;
     }
+    if (await accounts(request, response, url.pathname)) return;
 
     const file = staticRoot && (await resolveFile(staticRoot, url.pathname));
     if (!file) {

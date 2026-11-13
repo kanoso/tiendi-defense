@@ -17,12 +17,24 @@ export function loadProgress(): Progress {
   }
 }
 
-export function saveProgress(progress: Progress): void {
+/** Told about every progress the player earns, to keep a copy elsewhere. */
+let onSaved: ((progress: Progress) => void) | null = null;
+
+export function whenProgressSaved(listener: ((progress: Progress) => void) | null): void {
+  onSaved = listener;
+}
+
+/**
+ * Keeps the progress on this device. `quietly` is for progress that came from
+ * elsewhere (the server), which does not need to be sent back there.
+ */
+export function saveProgress(progress: Progress, quietly = false): void {
   try {
     localStorage.setItem(PROGRESS_KEY, serializeProgress(progress));
   } catch {
     // Nothing to do: see above.
   }
+  if (!quietly) onSaved?.(progress);
 }
 
 /** The difficulty the player last chose. Normal for a first visit. */

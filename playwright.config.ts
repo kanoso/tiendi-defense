@@ -27,7 +27,8 @@ export default defineConfig({
       // Always a fresh build: a server left over from before would test old code.
       command: 'npm run server',
       url: `http://localhost:${COOP_PORT}/health`,
-      env: { PORT: String(COOP_PORT) },
+      // Accounts made by the tests are kept apart, in a folder git ignores.
+      env: { PORT: String(COOP_PORT), DATA_DIR: '.e2e-data' },
       reuseExistingServer: false,
       timeout: 120_000,
     },

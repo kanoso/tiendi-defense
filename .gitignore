@@ -3,3 +3,4 @@ dist
 test-results
 playwright-report
 server-dist
+.e2e-data

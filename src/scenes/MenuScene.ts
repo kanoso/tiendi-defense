@@ -3,7 +3,10 @@ import { DIFFICULTIES, findDifficulty, type DifficultyId } from '../data/difficu
 import { MAP_IDS, MAPS, type GameMap } from '../data/maps';
 import { findMode, GAME_MODES, type GameMode } from '../data/modes';
 import { GAME_HEIGHT, GAME_WIDTH } from '../data/rules';
-import { coopServerBase, isCoopServerUp, rejoinGame } from '../net/CoopLink';
+import { coopServerBase, rejoinGame } from '../net/CoopLink';
+import { onlineFeatures } from '../net/online';
+import { startCloudSync, syncNow } from '../progress/cloudSync';
+import { openAccountPanel } from '../ui/accountPanel';
 import { clearTicket, loadTicket, tabStore } from '../net/rejoinTicket';
 import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
 import { FONT, GROUND_SCALE, HERO_STYLE, SELECTION_COLOR } from '../entities/styles';
@@ -101,6 +104,8 @@ export class MenuScene extends Phaser.Scene {
   available = 0;
   /** Where the co-op button is, when a server is available. */
   coopButton: { x: number; y: number } | null = null;
+  /** Where the button to keep progress under a code is, when the server keeps accounts. */
+  accountButton: { x: number; y: number } | null = null;
   /** Where the full screen button is, when the browser allows one. */
   fullscreenButton: { x: number; y: number } | null = null;
 
@@ -137,7 +142,8 @@ export class MenuScene extends Phaser.Scene {
     this.fullscreenButton = null;
     this.drawFullscreenButton();
     this.coopButton = null;
-    void this.offerCoop();
+    this.accountButton = null;
+    void this.offerOnlineFeatures();
     this.drawChoices();
     this.drawMaps(progress);
     this.heading(
@@ -179,9 +185,10 @@ export class MenuScene extends Phaser.Scene {
    * Shows the co-op button only when a server is there to answer it. The public
    * site has none, so the button would only lead to an error.
    */
-  private async offerCoop(): Promise<void> {
+  private async offerOnlineFeatures(): Promise<void> {
     const server = coopServerBase();
-    if (!(await isCoopServerUp(server)) || !this.scene.isActive()) return;
+    const features = await onlineFeatures();
+    if (!features || !this.scene.isActive()) return;
 
     // This tab was in a shared game when the page was reloaded: go straight back.
     const ticket = loadTicket(tabStore());
@@ -201,6 +208,45 @@ export class MenuScene extends Phaser.Scene {
     this.clickable(frame, () => this.openCoopLobby(server));
     this.label(x, 30, 'Cooperativo', 15, '#ffe066', true);
     this.coopButton = { x, y: 30 };
+
+    if (features.accounts) await this.offerAccount(server);
+  }
+
+  /**
+   * The button to keep progress under a player code. With a code already in
+   * use, the progress is brought up to date first: another device may have
+   * earned something since.
+   */
+  private async offerAccount(server: string): Promise<void> {
+    const cloud = startCloudSync(server);
+    if (cloud.code() && (await syncNow()) && this.scene.isActive()) {
+      this.scene.restart();
+      return;
+    }
+    if (!this.scene.isActive()) return;
+
+    const x = 16 + 75;
+    const y = 70;
+    const frame = this.panel(x, y, 150, 32, false);
+    this.clickable(frame, () => {
+      const keyboard = this.input.keyboard;
+      if (keyboard) keyboard.enabled = false;
+      this.input.enabled = false;
+      let changed = false;
+      const codeBefore = cloud.code();
+      openAccountPanel({
+        cloud,
+        onProgressChanged: () => (changed = true),
+        onClose: () => {
+          if (keyboard) keyboard.enabled = true;
+          this.input.enabled = true;
+          // Stars from another device, or a code made or dropped, change what the menu shows.
+          if (changed || cloud.code() !== codeBefore) this.scene.restart();
+        },
+      });
+    });
+    this.label(x, y, cloud.code() ? 'Mi código' : 'Guardar avance', 15, '#f4f1e8', true);
+    this.accountButton = { x, y };
   }
 
   private openCoopLobby(server: string): void {

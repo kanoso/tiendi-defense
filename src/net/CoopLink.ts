@@ -20,15 +20,19 @@ export function coopServerBase(): string {
   return (fromAddress || fromBuild || window.location.origin).replace(/\/+$/, '');
 }
 
-/** Whether a co-op server answers at `base`. Never throws; gives up after a moment. */
-export async function isCoopServerUp(base: string): Promise<boolean> {
+/**
+ * What the server at `base` offers, or null if none answers there. Never
+ * throws; gives up after a moment.
+ */
+export async function serverFeatures(base: string): Promise<{ coop: true; accounts: boolean } | null> {
   try {
     const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(2500) });
-    if (!response.ok) return false;
-    const body: unknown = await response.json();
-    return typeof body === 'object' && body !== null && (body as { ok?: unknown }).ok === true;
+    if (!response.ok) return null;
+    const body = (await response.json()) as { ok?: unknown; accounts?: unknown } | null;
+    if (body?.ok !== true) return null;
+    return { coop: true, accounts: body.accounts === true };
   } catch {
-    return false;
+    return null;
   }
 }
 

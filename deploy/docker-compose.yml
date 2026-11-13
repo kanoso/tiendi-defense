@@ -11,6 +11,9 @@ services:
     environment:
       # Sites, besides this server, whose pages may use it. Comma-separated.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+    volumes:
+      # Player progress. Kept apart from the image so it survives every update.
+      - progress:/app/data
     ports:
       - "${HOST_PORT:-8787}:8787"
     read_only: true
@@ -18,3 +21,6 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: 256m
     cpus: 1.0
+
+volumes:
+  progress:

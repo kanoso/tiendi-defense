@@ -6,7 +6,9 @@ FROM node:22-alpine
 WORKDIR /app
 COPY dist ./dist
 COPY server-dist ./server-dist
-ENV NODE_ENV=production PORT=8787 STATIC_DIR=dist
+# Player progress lives in a volume mounted here, owned by the user the server runs as.
+RUN mkdir -p /app/data && chown node:node /app/data
+ENV NODE_ENV=production PORT=8787 STATIC_DIR=dist DATA_DIR=/app/data
 EXPOSE 8787
 USER node
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \

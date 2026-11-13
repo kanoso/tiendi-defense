@@ -3,6 +3,7 @@ import { createGameServer } from './gameServer';
 // Entry point of the co-op server. Configured by environment variables:
 //   PORT        port to listen on (default 8787)
 //   STATIC_DIR  folder with the built game to serve (default "dist")
+//   DATA_DIR    folder where player progress is kept (default none: not offered)
 //   ALLOWED_ORIGINS  comma-separated sites whose pages may use this server,
 //                    besides the game it serves itself (default none)
 
@@ -13,7 +14,9 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
   .map((origin) => origin.trim().replace(/\/+$/, ''))
   .filter(Boolean);
 
-const server = await createGameServer({ port, staticDir, allowedOrigins });
+const dataDir = process.env.DATA_DIR || undefined;
+
+const server = await createGameServer({ port, staticDir, allowedOrigins, dataDir });
 console.log(`Tower Defense Heroes server listening on port ${server.port}, serving "${staticDir}"`);
 
 // Stop cleanly when the container is told to.

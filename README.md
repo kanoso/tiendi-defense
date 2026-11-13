@@ -85,6 +85,18 @@ Todos los jugadores simulan la misma partida: el servidor solo reparte las
 órdenes por turnos y guarda una copia de referencia, que envía completa si
 alguien se desvía o vuelve tras perder la conexión.
 
+## Guardar el avance
+
+Con el servidor en marcha, «Guardar avance» en el menú da un código de jugador
+(como `KXT4-9QPM`) que guarda estrellas, rangos y récords sin pedir nombre ni
+email. Escribiendo ese código en otro dispositivo, el avance de los dos se une:
+de cada cosa queda lo mejor. Cada partida ganada se guarda sola.
+
+El servidor guarda las cuentas en `DATA_DIR` (con Docker, en el volumen
+`progress`), un archivo por cuenta nombrado con un hash del código: el código
+mismo nunca se escribe en disco. Los códigos que no existen cuentan como
+intentos fallidos, y tras varios seguidos el servidor hace esperar.
+
 ## Cómo está armado
 
 Phaser 3, TypeScript y Vite. La lógica del juego vive en `src/core/` como
