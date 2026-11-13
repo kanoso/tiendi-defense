@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
+import { pipeline } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { createAccountsApi } from './accounts';
 import { googleKeysFromGoogle, type GoogleKeys } from './google';
@@ -44,6 +45,8 @@ export interface GameServer {
   /** One beat of the clock for every room. */
   tick(): void;
   roomCount(): number;
+  /** Resolves once every HTTP request being handled has been answered or dropped. */
+  settled(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -133,8 +136,26 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
 
   // --- connections ----------------------------------------------------------
 
+  /** HTTP requests still being handled. */
+  const inFlight = new Set<Promise<void>>();
+
   const http = createServer((request, response) => {
-    void handleHttp(request, response);
+    // One request going wrong must never take every game on the server with it.
+    const handled = handleHttp(request, response).catch((error: unknown) => {
+      const pathname = (request.url ?? '/').split('?')[0];
+      console.error(`HTTP ${request.method ?? '?'} ${pathname} failed:`, error);
+      if (response.headersSent || response.destroyed || response.writableEnded) {
+        response.destroy();
+        return;
+      }
+      response.writeHead(500, { 'content-type': CONTENT_TYPES['.json'], 'cache-control': 'no-store' });
+      response.end(JSON.stringify({ error: 'Error interno' }));
+    });
+    inFlight.add(handled);
+    const done = (): void => {
+      inFlight.delete(handled);
+    };
+    handled.then(done, done);
   });
   const wss = new WebSocketServer({ server: http, path: '/ws', maxPayload: MAX_MESSAGE_BYTES });
 
@@ -171,11 +192,21 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
         return;
       }
 
-      if (seat === null) {
-        enter(message);
-      } else {
-        act(seat, message);
-        flush(seat.room);
+      // A bug in a room is logged and the message dropped; thrown out of here,
+      // it would stop the whole server. The message itself is never logged:
+      // it may carry a player's token.
+      try {
+        if (seat === null) {
+          enter(message);
+        } else {
+          act(seat, message);
+          flush(seat.room);
+        }
+      } catch (error) {
+        // Quoted and cut short: the type comes from the client, and must
+        // neither throw here nor forge lines in the log.
+        const type = typeof message.t === 'string' ? JSON.stringify(message.t.slice(0, 20)) : 'invalid';
+        console.error(`WebSocket message ${type} failed:`, error);
       }
     });
 
@@ -243,11 +274,20 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
       // A newer connection of the same player may already have taken the seat.
       if (connections?.get(playerId) !== socket) return;
       connections.delete(playerId);
-      room.disconnect(playerId);
-      flush(room);
-      if (!room.isEmpty()) return;
-      if (room.info().state === 'lobby') removeRoom(code, room);
-      else emptySince.set(room, Date.now());
+      try {
+        room.disconnect(playerId);
+        flush(room);
+      } catch (error) {
+        console.error(`Room ${code} failed while a player left:`, error);
+      }
+      // Apart from the above, so a room that failed there is still tidied up.
+      try {
+        if (!room.isEmpty()) return;
+        if (room.info().state === 'lobby') removeRoom(code, room);
+        else emptySince.set(room, Date.now());
+      } catch (error) {
+        console.error(`Room ${code} failed while being tidied up:`, error);
+      }
     });
     socket.on('error', () => socket.close());
   });
@@ -255,7 +295,15 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
   // --- the game files and a health check -------------------------------------
 
   async function handleHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const url = new URL(request.url ?? '/', 'http://localhost');
+    let url: URL;
+    try {
+      url = new URL(request.url ?? '/', 'http://localhost');
+    } catch {
+      // A path such as "//" is no address at all.
+      response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end('Bad request');
+      return;
+    }
     if (url.pathname === '/health') {
       const players = [...sockets.values()].reduce((sum, connections) => sum + connections.size, 0);
       const origin = request.headers.origin;
@@ -291,7 +339,9 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
       // The page itself is always fresh; its assets carry a hash in their name.
       'cache-control': file.endsWith('.html') ? 'no-cache' : 'public, max-age=3600',
     });
-    createReadStream(file).pipe(response);
+    // Unlike `pipe`, a failed read (or a client gone mid-download) closes both
+    // ends instead of raising an error nobody listens for.
+    pipeline(createReadStream(file), response, () => {});
   }
 
   // --- the clock --------------------------------------------------------------
@@ -299,8 +349,17 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
   function tick(): void {
     const now = Date.now();
     for (const [code, room] of rooms) {
-      room.tick();
-      flush(room);
+      try {
+        room.tick();
+        flush(room);
+      } catch (error) {
+        // A room that breaks would break again on every beat: it is closed, so
+        // the other rooms keep playing.
+        console.error(`Room ${code} failed and was closed:`, error);
+        for (const socket of sockets.get(room)?.values() ?? []) socket.close(1011, 'Error interno');
+        removeRoom(code, room);
+        continue;
+      }
       const since = emptySince.get(room);
       if (since !== undefined && now - since >= abandonedRoomMs) removeRoom(code, room);
     }
@@ -328,6 +387,9 @@ export async function createGameServer(options: GameServerOptions = {}): Promise
     port: (http.address() as AddressInfo).port,
     tick,
     roomCount: () => rooms.size,
+    async settled() {
+      while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
+    },
     async close() {
       if (timer) clearInterval(timer);
       for (const socket of wss.clients) socket.terminate();

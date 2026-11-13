@@ -275,6 +275,8 @@ export function createAccountsApi(options: AccountsApiOptions) {
     const headers: Record<string, string> = { vary: 'Origin', 'cache-control': 'no-store' };
     if (origin !== undefined && options.allowedOrigins.includes(origin)) headers['access-control-allow-origin'] = origin;
     const reply = (status: number, body?: unknown): true => {
+      // Nobody is left to read it when the client has hung up.
+      if (response.destroyed || response.writableEnded) return true;
       response.writeHead(status, body === undefined ? headers : { ...headers, 'content-type': 'application/json; charset=utf-8' });
       response.end(body === undefined ? undefined : JSON.stringify(body));
       return true;
@@ -299,10 +301,16 @@ export function createAccountsApi(options: AccountsApiOptions) {
       misses.add(address);
       return reply(404, { error: 'No hay ningún avance con ese código' });
     };
+    /** The answer to a body that cannot be used at all, or null if it can be looked at. */
+    const unusableBody = (body: unknown): true | null => {
+      if (body === 'too-big') return reply(413, { error: 'Demasiado grande' });
+      if (body === 'unreadable') return reply(400, { error: 'Pedido no válido' });
+      return null;
+    };
 
     if (pathname === '/api/accounts' && request.method === 'POST') {
       const body = await readJson(request);
-      if (body === 'too-big') return reply(413, { error: 'Demasiado grande' });
+      if (unusableBody(body)) return true;
       const progress = progressIn(body);
       if (!progress) return reply(400, { error: 'Avance no válido' });
       if (creations.blocked(address)) return tooManyCreations();
@@ -315,7 +323,7 @@ export function createAccountsApi(options: AccountsApiOptions) {
     if (pathname === '/api/google' && request.method === 'POST') {
       if (!options.google) return reply(404, { error: 'Este servidor no ofrece entrar con Google' });
       const body = await readJson(request);
-      if (body === 'too-big') return reply(413, { error: 'Demasiado grande' });
+      if (unusableBody(body)) return true;
       const progress = progressIn(body);
       const credential = (body as { credential?: unknown } | null)?.credential;
       if (!progress || typeof credential !== 'string') return reply(400, { error: 'Pedido no válido' });
@@ -355,7 +363,7 @@ export function createAccountsApi(options: AccountsApiOptions) {
         return reply(204);
       }
       const body = await readJson(request);
-      if (body === 'too-big') return reply(413, { error: 'Demasiado grande' });
+      if (unusableBody(body)) return true;
       const game = parseSavedGame((body as { savedGame?: unknown } | null)?.savedGame);
       if (!game) return reply(400, { error: 'Partida no válida' });
       return reply(200, { savedGame: await savedGames.put(key, game) });
@@ -372,7 +380,7 @@ export function createAccountsApi(options: AccountsApiOptions) {
       }
 
       const body = await readJson(request);
-      if (body === 'too-big') return reply(413, { error: 'Demasiado grande' });
+      if (unusableBody(body)) return true;
       const progress = progressIn(body);
       if (!progress) return reply(400, { error: 'Avance no válido' });
       const account = await store.merge(key, progress);
@@ -400,13 +408,21 @@ function progressIn(body: unknown): Progress | null {
   return parseProgress(JSON.stringify(progress));
 }
 
+/**
+ * The request's body as JSON: null if it is not JSON, 'too-big' past the
+ * limit, and 'unreadable' when it never fully arrived (the client hung up).
+ */
 async function readJson(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
-  for await (const chunk of request) {
-    size += (chunk as Buffer).length;
-    if (size > MAX_BODY_BYTES) return 'too-big';
-    chunks.push(chunk as Buffer);
+  try {
+    for await (const chunk of request) {
+      size += (chunk as Buffer).length;
+      if (size > MAX_BODY_BYTES) return 'too-big';
+      chunks.push(chunk as Buffer);
+    }
+  } catch {
+    return 'unreadable';
   }
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
