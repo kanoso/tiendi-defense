@@ -1,5 +1,6 @@
 import { normalizeCode } from './playerCode';
 import { parseProgress, type Progress } from './progress';
+import { parseSavedGame, type SavedGame } from './savedGame';
 
 // The game's side of player codes: keeps the code this device uses and trades
 // progress with the server. It knows nothing about the page, so it can be
@@ -114,8 +115,38 @@ export class ProgressCloud {
 
   /** Sends this device's progress and gets the joined one back. Null without a code. */
   async sync(progress: Progress): Promise<Progress | null> {
-    const credential = this.code() ?? (this.signedInWithGoogle() ? this.codes.get() : null);
+    const credential = this.credential();
     return credential ? this.put(credential, progress) : null;
+  }
+
+  // --- a game left between waves -------------------------------------------------
+
+  /** The game the account left between waves, or null (also without an account). */
+  async loadSavedGame(): Promise<SavedGame | null> {
+    const credential = this.credential();
+    if (!credential) return null;
+    const body = await this.request('GET', '/api/saved-game', credential, null);
+    return parseSavedGame(body.savedGame);
+  }
+
+  /** Keeps a game with the account. Gives back the one the account keeps: it may have a newer one. */
+  async putSavedGame(game: SavedGame): Promise<SavedGame | null> {
+    const credential = this.credential();
+    if (!credential) return null;
+    const body = await this.request('PUT', '/api/saved-game', credential, { savedGame: game });
+    return parseSavedGame(body.savedGame);
+  }
+
+  /** The game ended: the account no longer keeps it. */
+  async clearSavedGame(gameId: string): Promise<void> {
+    const credential = this.credential();
+    if (!credential) return;
+    await this.request('DELETE', `/api/saved-game?gameId=${encodeURIComponent(gameId)}`, credential, null);
+  }
+
+  /** What this device signs its requests with: its code or its Google session. */
+  private credential(): string | null {
+    return this.code() ?? (this.signedInWithGoogle() ? this.codes.get() : null);
   }
 
   /** Stops using the code on this device. The progress stays on the server. */
@@ -132,17 +163,17 @@ export class ProgressCloud {
     method: string,
     route: string,
     credential: string | null,
-    payload: Record<string, unknown>,
+    payload: Record<string, unknown> | null,
   ): Promise<Record<string, unknown>> {
     let response: Response;
     try {
       response = await fetch(`${this.base}${route}`, {
         method,
         headers: {
-          'content-type': 'application/json',
+          ...(payload ? { 'content-type': 'application/json' } : {}),
           ...(credential ? { authorization: `Bearer ${credential}` } : {}),
         },
-        body: JSON.stringify(payload),
+        body: payload ? JSON.stringify(payload) : undefined,
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch {
@@ -152,6 +183,7 @@ export class ProgressCloud {
     if (response.status === 401 && route === '/api/google') throw new CloudError('google-refused');
     if (response.status === 429) throw new CloudError('busy');
     if (!response.ok) throw new CloudError('refused');
+    if (response.status === 204) return {};
     try {
       return (await response.json()) as Record<string, unknown>;
     } catch {

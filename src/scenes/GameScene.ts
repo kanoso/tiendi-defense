@@ -15,8 +15,7 @@ import {
   type Hero,
   type Level,
 } from '../core/simulation';
-import { applyDifficulty, findDifficulty, type DifficultyId } from '../data/difficulty';
-import { asEndless } from '../data/endless';
+import { findDifficulty, type DifficultyId } from '../data/difficulty';
 import { findMap, MAPS, type GameMap } from '../data/maps';
 import type { CoopLink } from '../net/CoopLink';
 import { coopLevel } from '../net/coopLevel';
@@ -45,7 +44,8 @@ import { HeroCards } from '../ui/HeroCards';
 import { TowerMenu } from '../ui/TowerMenu';
 import { endlessBest, recordEndless, recordVictory, starsFor } from '../progress/progress';
 import { loadProgress, saveProgress } from '../progress/storage';
-import { applyHeroRanks } from '../progress/upgrades';
+import { makeSavedGame, playerLevel, type SavedGame } from '../progress/savedGame';
+import { dropSavedGame, keepSavedGame } from '../progress/savedGameSync';
 import { listen, soundEventsSince, type Heard } from '../ui/soundEvents';
 import { loadSoundsInBackground, SoundPlayer } from '../ui/SoundPlayer';
 import { setColorIfChanged } from '../ui/text';
@@ -131,6 +131,13 @@ export class GameScene extends Phaser.Scene {
   private level: Level = MAPS[0].level;
   /** Stars earned by the victory on screen, once it has been saved. */
   private earnedStars: number | null = null;
+  /** A game left between waves, to start from instead of a new one. Used once. */
+  private resume: SavedGame | null = null;
+  /** Tells this game apart from others, so ending it only clears its own save. */
+  private gameId = '';
+  /** The wave the save was last made for, so each break between waves saves once. */
+  private savedWave = -1;
+  private saveDropped = false;
   private game_!: GameState;
   private stepper!: FixedStepper;
   private pendingCommands: Command[] = [];
@@ -203,6 +210,7 @@ export class GameScene extends Phaser.Scene {
     difficulty?: DifficultyId;
     mode?: GameMode;
     coop?: CoopLink;
+    resume?: SavedGame;
   }): void {
     // A shared game: the server decided the map and the difficulty, and every
     // player has to build exactly the same level from what it sent.
@@ -215,14 +223,19 @@ export class GameScene extends Phaser.Scene {
       this.level = coopLevel(start.mapId, start.difficulty, start.playerCount);
       return;
     }
+    if (data?.resume) {
+      this.resume = data.resume;
+      this.coop = null;
+      this.map = findMap(data.resume.mapId);
+      this.difficulty = data.resume.difficulty;
+      this.mode = data.resume.mode;
+    }
     if (data?.mapId) this.coop = null;
     if (data?.mapId) this.map = findMap(data.mapId);
     if (data?.difficulty) this.difficulty = data.difficulty;
     if (data?.mode) this.mode = data.mode;
     // The map as this player meets it: at the chosen difficulty, with their hero ranks.
-    const atDifficulty = applyDifficulty(this.map.level, this.difficulty);
-    const withRanks = applyHeroRanks(atDifficulty, loadProgress().heroRanks);
-    this.level = this.mode === 'endless' ? asEndless(withRanks) : withRanks;
+    this.level = playerLevel(this.map.id, this.difficulty, this.mode, loadProgress().heroRanks);
   }
 
   preload(): void {
@@ -235,7 +248,15 @@ export class GameScene extends Phaser.Scene {
     // slow, blocked or missing. Each sound simply stays quiet until it arrives.
     loadSoundsInBackground(this);
     // The scene instance is reused on restart, so every field starts over here.
-    this.game_ = createGame(this.level, this.coop?.session.start?.seed ?? Date.now());
+    // A game picked up where it was left, or a new one. "Play again" is always new.
+    const resumed = this.resume !== null;
+    this.game_ = this.resume
+      ? structuredClone(this.resume.state)
+      : createGame(this.level, this.coop?.session.start?.seed ?? Date.now());
+    this.gameId = this.resume?.gameId ?? newGameId();
+    this.resume = null;
+    this.savedWave = this.game_.waveIndex;
+    this.saveDropped = false;
     this.coopClock = 0;
     this.stepper = createFixedStepper(STEP_MS);
     this.pendingCommands = [];
@@ -253,7 +274,7 @@ export class GameScene extends Phaser.Scene {
     this.speed = 1;
     this.paused = false;
     // A shared game is no place for a tutorial that waits on one player.
-    this.tutorial = new Tutorial(this.coop !== null || hasSeenTutorial());
+    this.tutorial = new Tutorial(this.coop !== null || resumed || hasSeenTutorial());
     this.seenPhase = this.game_.phase;
     this.seenTowers = 0;
     this.signalMarks = new SignalMarks(this);
@@ -281,6 +302,8 @@ export class GameScene extends Phaser.Scene {
     for (const event of soundEventsSince(this.heard, this.game_)) this.sounds.play(event);
     this.heard = listen(this.game_);
     this.recordVictoryOnce();
+    this.saveBetweenWaves();
+    this.dropSaveOnceOver();
     this.recordEndlessOnce();
     this.followTutorial();
     this.stopAimingIfUnavailable();
@@ -478,6 +501,27 @@ export class GameScene extends Phaser.Scene {
     if (this.coop || this.game_.phase !== 'won' || this.earnedStars !== null) return;
     this.earnedStars = starsFor(this.game_.lives, this.level.startingLives);
     saveProgress(recordVictory(loadProgress(), this.map.id, this.difficulty, this.earnedStars));
+  }
+
+  /**
+   * Keeps the game each time a wave is over, to be continued later. Only then:
+   * leaving in the middle of a wave goes back to the start of that wave.
+   * A shared game belongs to everyone in it, so it is never saved alone.
+   */
+  private saveBetweenWaves(): void {
+    const game = this.game_;
+    if (this.coop || game.phase !== 'preparing' || game.waveIndex === this.savedWave) return;
+    this.savedWave = game.waveIndex;
+    keepSavedGame(
+      makeSavedGame({ gameId: this.gameId, mapId: this.map.id, difficulty: this.difficulty, mode: this.mode, state: game }),
+    );
+  }
+
+  /** A game that ended is not offered to be continued. */
+  private dropSaveOnceOver(): void {
+    if (this.coop || this.saveDropped || !isOver(this.game_)) return;
+    this.saveDropped = true;
+    dropSavedGame(this.gameId);
   }
 
   /** An endless game always ends in defeat; that is when its score counts. */
@@ -1064,4 +1108,9 @@ export class GameScene extends Phaser.Scene {
     );
     this.towerMenu.sync(game.gold);
   }
+}
+
+/** An id for a new game: unique enough to tell one player's games apart. */
+function newGameId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

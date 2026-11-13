@@ -6,6 +6,8 @@ import { createGameServer, type GameServer } from '../../server/gameServer';
 import { googleToken, TEST_CLIENT_ID, testGoogleKeys } from '../../server/testing/googleTokens';
 import { CloudError, ProgressCloud, type CodeStore } from './cloud';
 import { emptyProgress, recordVictory, type Progress } from './progress';
+import { createGame, step } from '../core/simulation';
+import { makeSavedGame, playerLevel, type SavedGame } from './savedGame';
 
 // The browser side of player codes, against a real server.
 
@@ -133,5 +135,48 @@ describe('signing in with Google', () => {
     expect(phone.signedInWithGoogle()).toBe(false);
     expect(phone.linked()).toBe(false);
     expect(await phone.sync(emptyProgress())).toBeNull();
+  });
+});
+
+describe('a game left between waves, kept with the account', () => {
+  function saved(gameId: string, savedAt: string): SavedGame {
+    const level = playerLevel('meadow', 'normal', 'campaign', {});
+    const game = createGame(level, 5);
+    step(game, level, [{ type: 'startWave' }]);
+    while (game.phase === 'wave') step(game, level);
+    return { ...makeSavedGame({ gameId, mapId: 'meadow', difficulty: 'normal', mode: 'campaign', state: game }), savedAt };
+  }
+
+  it('a device without an account keeps none on the server', async () => {
+    const phone = device();
+    expect(await phone.loadSavedGame()).toBeNull();
+    expect(await phone.putSavedGame(saved('a', '2026-11-12T10:00:00.000Z'))).toBeNull();
+  });
+
+  it('another device with the same code finds it', async () => {
+    const phone = device();
+    const { code } = await phone.create(emptyProgress());
+    const game = saved('a', '2026-11-12T10:00:00.000Z');
+    expect(await phone.putSavedGame(game)).toEqual(game);
+
+    const computer = device();
+    await computer.link(code, emptyProgress());
+    expect(await computer.loadSavedGame()).toEqual(game);
+  });
+
+  it('is cleared once that game ends', async () => {
+    const phone = device();
+    await phone.create(emptyProgress());
+    await phone.putSavedGame(saved('a', '2026-11-12T10:00:00.000Z'));
+    await phone.clearSavedGame('a');
+    expect(await phone.loadSavedGame()).toBeNull();
+  });
+
+  it('works the same signed in with Google', async () => {
+    const phone = device();
+    await phone.signInWithGoogle(googleToken({ sub: 'saved-game-player' }), emptyProgress());
+    const game = saved('g', '2026-11-12T10:00:00.000Z');
+    await phone.putSavedGame(game);
+    expect(await phone.loadSavedGame()).toEqual(game);
   });
 });

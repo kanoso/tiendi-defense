@@ -5,6 +5,7 @@ import path from 'node:path';
 import { mergeProgress } from '../src/progress/merge';
 import { CODE_LENGTH, CODE_LETTERS, normalizeCode } from '../src/progress/playerCode';
 import { emptyProgress, parseProgress, serializeProgress, type Progress } from '../src/progress/progress';
+import { newerSavedGame, parseSavedGame, type SavedGame } from '../src/progress/savedGame';
 import { verifyGoogleIdToken, type GoogleKeys } from './google';
 
 export { normalizeCode };
@@ -126,6 +127,61 @@ export class AccountStore {
 }
 
 /**
+ * The game an account left between waves: one per account, apart from its
+ * progress so neither overwrites the other. Only playable games are kept.
+ */
+export class SavedGameStore {
+  private queues = new Map<string, Promise<unknown>>();
+
+  constructor(private dir: string) {}
+
+  async load(accountKey: string): Promise<SavedGame | null> {
+    try {
+      return parseSavedGame(JSON.parse(await readFile(this.fileOf(accountKey), 'utf8')));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Keeps `game` unless the account already has one saved later. Gives back the one kept. */
+  put(accountKey: string, game: SavedGame): Promise<SavedGame> {
+    return this.queued(accountKey, async () => {
+      const kept = newerSavedGame(await this.load(accountKey), game)!;
+      if (kept === game) {
+        await mkdir(this.dir, { recursive: true });
+        const file = this.fileOf(accountKey);
+        const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+        await writeFile(temporary, JSON.stringify(game));
+        await rename(temporary, file);
+      }
+      return kept;
+    });
+  }
+
+  /** Clears the saved game, but only if it is the game that ended. */
+  remove(accountKey: string, gameId: string): Promise<void> {
+    return this.queued(accountKey, async () => {
+      if ((await this.load(accountKey))?.gameId === gameId) await rm(this.fileOf(accountKey), { force: true });
+    });
+  }
+
+  private fileOf(accountKey: string): string {
+    return path.join(this.dir, `${sha256(`saved:${accountKey}`)}.json`);
+  }
+
+  private queued<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.queues.get(key) ?? Promise.resolve();
+    const next = previous.then(work, work);
+    const settled = next.catch(() => {});
+    this.queues.set(key, settled);
+    void settled.then(() => {
+      if (this.queues.get(key) === settled) this.queues.delete(key);
+    });
+    return next;
+  }
+}
+
+/**
  * Sessions of signed-in devices: a random token the device keeps, standing for
  * the account it signed in to. Only a hash of the token is kept here.
  */
@@ -199,6 +255,7 @@ export interface AccountsApiOptions {
 export function createAccountsApi(options: AccountsApiOptions) {
   const store = options.dataDir ? new AccountStore(options.dataDir) : null;
   const sessions = options.dataDir ? new SessionStore(path.join(options.dataDir, 'sessions')) : null;
+  const savedGames = options.dataDir ? new SavedGameStore(path.join(options.dataDir, 'saved')) : null;
   const misses = new Limiter(MAX_MISSES, MISS_WINDOW_MS);
   const requests = new Limiter(MAX_REQUESTS_PER_MINUTE, 60_000);
   const creations = new Limiter(MAX_CREATIONS_PER_HOUR, 60 * 60_000);
@@ -223,7 +280,7 @@ export function createAccountsApi(options: AccountsApiOptions) {
       return true;
     };
 
-    if (!store || !sessions) return reply(404, { error: 'Este servidor no guarda avances' });
+    if (!store || !sessions || !savedGames) return reply(404, { error: 'Este servidor no guarda avances' });
     if (request.method === 'OPTIONS') {
       headers['access-control-allow-methods'] = 'GET, POST, PUT, DELETE';
       headers['access-control-allow-headers'] = 'authorization, content-type';
@@ -284,6 +341,24 @@ export function createAccountsApi(options: AccountsApiOptions) {
       const credential = /^Bearer\s+(.+)$/i.exec(request.headers.authorization ?? '')?.[1]?.trim() ?? '';
       if (SESSION_PATTERN.test(credential)) await sessions.remove(credential);
       return reply(204);
+    }
+
+    if (pathname === '/api/saved-game' && ['GET', 'PUT', 'DELETE'].includes(request.method ?? '')) {
+      const key = await accountKeyOf(request);
+      if (key === 'missing') return reply(401, { error: 'Falta el código de jugador' });
+      if (key === null || !(await store.load(key))) return unknownAccount();
+
+      if (request.method === 'GET') return reply(200, { savedGame: await savedGames.load(key) });
+      if (request.method === 'DELETE') {
+        const gameId = new URL(request.url ?? '/', 'http://localhost').searchParams.get('gameId');
+        if (gameId) await savedGames.remove(key, gameId);
+        return reply(204);
+      }
+      const body = await readJson(request);
+      if (body === 'too-big') return reply(413, { error: 'Demasiado grande' });
+      const game = parseSavedGame((body as { savedGame?: unknown } | null)?.savedGame);
+      if (!game) return reply(400, { error: 'Partida no válida' });
+      return reply(200, { savedGame: await savedGames.put(key, game) });
     }
 
     if (pathname === '/api/progress' && (request.method === 'GET' || request.method === 'PUT')) {

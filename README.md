@@ -100,6 +100,12 @@ Para activarlo hace falta un ID de cliente OAuth de tipo «Aplicación web» en
 Google Cloud, con los dominios del juego como orígenes de JavaScript
 autorizados, y pasarlo al servidor en `GOOGLE_CLIENT_ID`.
 
+Cada vez que termina una oleada, la partida queda guardada: el menú ofrece
+«Continuar» (o la tecla C) para retomarla desde ahí, y con una cuenta también
+desde otro dispositivo, siempre la más reciente. Salir a mitad de una oleada
+vuelve al principio de esa oleada. Al ganar o perder deja de ofrecerse. Las
+partidas cooperativas no se guardan así.
+
 El código de jugador da
 (como `KXT4-9QPM`) que guarda estrellas, rangos y récords sin pedir nombre ni
 email. Escribiendo ese código en otro dispositivo, el avance de los dos se une:

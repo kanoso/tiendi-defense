@@ -7,6 +7,8 @@ import { coopServerBase, rejoinGame } from '../net/CoopLink';
 import { onlineFeatures } from '../net/online';
 import { startCloudSync, syncNow } from '../progress/cloudSync';
 import { openAccountPanel } from '../ui/accountPanel';
+import { continueLabel, type SavedGame } from '../progress/savedGame';
+import { latestSavedGame, localSavedGame } from '../progress/savedGameSync';
 import { clearTicket, loadTicket, tabStore } from '../net/rejoinTicket';
 import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
 import { FONT, GROUND_SCALE, HERO_STYLE, SELECTION_COLOR } from '../entities/styles';
@@ -104,6 +106,10 @@ export class MenuScene extends Phaser.Scene {
   available = 0;
   /** Where the co-op button is, when a server is available. */
   coopButton: { x: number; y: number } | null = null;
+  /** The button to pick up a game left between waves, when there is one. */
+  continueButton: { x: number; y: number; label: string } | null = null;
+  /** The game that button continues. */
+  private continuing: SavedGame | null = null;
   /** Where the button to keep progress under a code is, when the server keeps accounts. */
   accountButton: { x: number; y: number } | null = null;
   /** Where the full screen button is, when the browser allows one. */
@@ -143,6 +149,8 @@ export class MenuScene extends Phaser.Scene {
     this.drawFullscreenButton();
     this.coopButton = null;
     this.accountButton = null;
+    this.continueButton = null;
+    this.drawContinue(localSavedGame());
     void this.offerOnlineFeatures();
     this.drawChoices();
     this.drawMaps(progress);
@@ -155,9 +163,29 @@ export class MenuScene extends Phaser.Scene {
     this.drawHeroes(progress);
 
     const keyboard = this.input.keyboard;
+    keyboard?.on('keydown-C', () => this.continueGame());
     MAP_KEYS.forEach((key, index) => {
       keyboard?.on(`keydown-${key}`, () => this.openMap(this.cards[index]));
     });
+  }
+
+  /** Offers to pick up the game left between waves, under the full screen button. */
+  private drawContinue(saved: SavedGame | null): void {
+    this.continuing = saved;
+    if (!saved) return;
+    // Narrow enough to stay clear of the title.
+    const width = 240;
+    const x = GAME_WIDTH - 16 - width / 2;
+    const y = 72;
+    const label = continueLabel(saved);
+    const frame = this.panel(x, y, width, 32, true);
+    this.clickable(frame, () => this.continueGame());
+    this.label(x, y, label, 14, '#ffe066', true);
+    this.continueButton = { x, y, label };
+  }
+
+  private continueGame(): void {
+    if (this.continuing) this.scene.start('game', { resume: this.continuing });
   }
 
   /** Left out where the browser cannot go full screen, as on an iPhone. */
@@ -220,6 +248,12 @@ export class MenuScene extends Phaser.Scene {
   private async offerAccount(server: string, googleClientId: string | null): Promise<void> {
     const cloud = startCloudSync(server);
     if (cloud.linked() && (await syncNow()) && this.scene.isActive()) {
+      this.scene.restart();
+      return;
+    }
+    // The account may hold a game left on another device, newer than this one's.
+    const latest = cloud.linked() ? await latestSavedGame() : null;
+    if (latest && latest.savedAt !== this.continuing?.savedAt && this.scene.isActive()) {
       this.scene.restart();
       return;
     }
