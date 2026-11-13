@@ -30,7 +30,7 @@ jobs:
       # The published site has no server of its own: co-op games go to this one.
       - run: npm run build
         env:
-          VITE_COOP_SERVER: https://defense.tiendi.pe
+          VITE_COOP_SERVER: https://defender.tiendi.pe
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
