@@ -1,6 +1,6 @@
 import { castAbility } from './abilities';
 import { canUseAbility, clamp, isAlive, waveAt } from './queries';
-import { buildTower, sellTower, upgradeTower } from './towers';
+import { buildTower, sellTower, specializeTower, upgradeTower } from './towers';
 import type { Command, GameState, Level } from './types';
 import { buildSpawnQueue } from './waves';
 
@@ -31,6 +31,8 @@ export function applyCommand(game: GameState, level: Level, command: Command): v
       return buildTower(game, level, command.slot, command.tower);
     case 'upgradeTower':
       return upgradeTower(game, level, command.slot);
+    case 'specializeTower':
+      return specializeTower(game, level, command.slot, command.branch);
     case 'sellTower':
       return sellTower(game, level, command.slot);
   }

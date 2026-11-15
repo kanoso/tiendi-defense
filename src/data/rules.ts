@@ -1,4 +1,4 @@
-import type { EnemyType, HeroType, Level, TowerLevel, TowerType } from '../core/simulation';
+import type { EnemyType, HeroType, Level, TowerBranch, TowerLevel, TowerType } from '../core/simulation';
 import type { Wave, WaveGroup } from '../core/waves';
 
 export const GAME_WIDTH = 960;
@@ -64,6 +64,8 @@ const enemyTypes: Record<string, EnemyType> = {
     attackIntervalTicks: 80,
     xp: 60,
     armor: 0.2,
+    // Stuns and freezes last half as long: a single ice tower must not hold it in place.
+    stunResist: 0.5,
   },
 };
 
@@ -233,7 +235,21 @@ function levels(shared: Partial<TowerLevel>, perLevel: Partial<TowerLevel>[]): T
   return perLevel.map((level) => ({ ...plainTower, ...shared, ...level }) as TowerLevel);
 }
 
+/** A branch: the two levels a tower may specialize into after its last base level. */
+function branch(
+  id: string,
+  name: string,
+  blurb: string,
+  shared: Partial<TowerLevel>,
+  [fourth, fifth]: [Partial<TowerLevel>, Partial<TowerLevel>],
+): TowerBranch {
+  const [lv4, lv5] = levels(shared, [fourth, fifth]);
+  return { id, name, blurb, levels: [lv4, lv5] };
+}
+
 // The first level's cost is the price to build; the others, the price to upgrade.
+// Branch levels cost far more: fully specializing every slot is more than a
+// whole campaign earns, so the player has to choose where to put the gold.
 const towerTypes: Record<string, TowerType> = {
   // Fast, single target, reaches the air.
   archery: {
@@ -242,6 +258,16 @@ const towerTypes: Record<string, TowerType> = {
       { cost: 60, damage: 15, range: 165 },
       { cost: 90, damage: 24, range: 180 },
     ]),
+    branches: [
+      branch('ballesta', 'Ballesta', 'Un blanco, perfora armadura', { attackIntervalTicks: 30 }, [
+        { cost: 280, damage: 60, range: 210, armorPierce: 0.5 },
+        { cost: 450, damage: 95, range: 230, armorPierce: 0.75 },
+      ]),
+      branch('lluvia', 'Lluvia de flechas', 'Cada disparo da a 3 enemigos', { targets: 3 }, [
+        { cost: 260, damage: 22, range: 190, attackIntervalTicks: 24 },
+        { cost: 420, damage: 32, range: 200, attackIntervalTicks: 22 },
+      ]),
+    ],
   },
   // Slow, area damage, ground only.
   cannon: {
@@ -250,6 +276,16 @@ const towerTypes: Record<string, TowerType> = {
       { cost: 90, damage: 42, range: 140, splashRadius: 55 },
       { cost: 130, damage: 65, range: 150, splashRadius: 60 },
     ]),
+    branches: [
+      branch('mortero', 'Mortero', 'Más alcance y área; no a voladores', { hitsFlying: false }, [
+        { cost: 300, damage: 90, range: 200, splashRadius: 80, attackIntervalTicks: 100 },
+        { cost: 480, damage: 130, range: 230, splashRadius: 95, attackIntervalTicks: 100 },
+      ]),
+      branch('bombarda', 'Bombarda', 'Dispara mucho más rápido', { hitsFlying: false }, [
+        { cost: 280, damage: 60, range: 150, splashRadius: 55, attackIntervalTicks: 45 },
+        { cost: 450, damage: 80, range: 160, splashRadius: 60, attackIntervalTicks: 36 },
+      ]),
+    ],
   },
   // No damage: slows one enemy after another.
   ice: {
@@ -258,6 +294,17 @@ const towerTypes: Record<string, TowerType> = {
       { cost: 70, range: 135, slowFactor: 0.45, slowTicks: 90 },
       { cost: 100, range: 150, slowFactor: 0.35, slowTicks: 100 },
     ]),
+    branches: [
+      // The splash slows everything it lands on, so the slow covers an area.
+      branch('ventisca', 'Ventisca', 'Frena a todos en una zona', { damage: 0, damageType: 'magic' }, [
+        { cost: 250, range: 165, splashRadius: 60, slowFactor: 0.35, slowTicks: 110, attackIntervalTicks: 45 },
+        { cost: 400, range: 180, splashRadius: 80, slowFactor: 0.3, slowTicks: 120, attackIntervalTicks: 45 },
+      ]),
+      branch('escarcha', 'Escarcha', 'Congela a uno: no anda ni ataca', { damage: 0, damageType: 'magic' }, [
+        { cost: 270, range: 160, slowFactor: 0.35, slowTicks: 100, stunTicks: 50, attackIntervalTicks: 110 },
+        { cost: 430, range: 175, slowFactor: 0.3, slowTicks: 110, stunTicks: 65, attackIntervalTicks: 95 },
+      ]),
+    ],
   },
   // Heavy magic hits that ignore armor.
   arcane: {
@@ -266,6 +313,16 @@ const towerTypes: Record<string, TowerType> = {
       { cost: 110, damage: 90, range: 150 },
       { cost: 160, damage: 140, range: 160 },
     ]),
+    branches: [
+      branch('rayo', 'Rayo', 'Salta entre 3 enemigos', { damageType: 'magic', chainJumps: 2 }, [
+        { cost: 320, damage: 130, range: 165, chainRange: 90, attackIntervalTicks: 70 },
+        { cost: 500, damage: 170, range: 175, chainRange: 110, attackIntervalTicks: 65 },
+      ]),
+      branch('desintegrar', 'Desintegrar', 'Daño enorme, disparo lento', { damageType: 'magic' }, [
+        { cost: 330, damage: 420, range: 185, attackIntervalTicks: 130 },
+        { cost: 550, damage: 750, range: 200, attackIntervalTicks: 140 },
+      ]),
+    ],
   },
 };
 

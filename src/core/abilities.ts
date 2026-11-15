@@ -1,4 +1,4 @@
-import { canReach, dealDamage } from './combat';
+import { canReach, dealDamage, stun } from './combat';
 import { length } from './path';
 import { clamp, enemyPosition, heroMaxHp, heroPower, isAlive } from './queries';
 import type { GameState, Hero, Level } from './types';
@@ -54,7 +54,7 @@ export function castAbility(
     const position = enemyPosition(level, enemy);
     if (length(position.x - centerX, position.y - centerY) > ability.radius) continue;
     dealDamage(level, enemy, damage, ability.damageType);
-    enemy.stunTicks = Math.max(enemy.stunTicks, ability.stunTicks);
+    stun(level, enemy, ability.stunTicks);
   }
 }
 

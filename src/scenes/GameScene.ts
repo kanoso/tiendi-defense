@@ -12,6 +12,7 @@ import {
   step,
   STEP_MS,
   TICKS_PER_SECOND,
+  towerStats,
   type Command,
   type GameState,
   type Hero,
@@ -63,8 +64,10 @@ import {
 } from '../entities/units';
 import {
   ABILITY_KEYS,
+  BRANCH_STYLE,
   ENEMY_STYLE,
   FONT,
+  FROZEN_TINT,
   HERO_RADIUS,
   HERO_SCALE,
   HERO_STYLE,
@@ -161,6 +164,8 @@ interface EnemyView {
 
 const NO_OFFSET: Point = { x: 0, y: 0 };
 
+const FROZEN: Tint = { fill: false, color: FROZEN_TINT };
+
 /** How close to a shot's landing spot an enemy may be and still have been hit by it. */
 const STRIKE_MARGIN = 12;
 
@@ -168,6 +173,8 @@ interface TowerView {
   base: Phaser.GameObjects.Image;
   icon: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
+  /** Colour of the branch badge under the level number, or null before it specializes. */
+  badge: number | null;
 }
 
 /**
@@ -213,6 +220,10 @@ export class GameScene extends Phaser.Scene {
   private remainsSprites: Phaser.GameObjects.Image[] = [];
   /** Tick and lives when enemies were last drawn, to tell the ones killed from the ones that got out. */
   private lastDrawn = { tick: 0, lives: 0 };
+  /** Enemies an ice tower froze and that have not thawed yet, drawn icy blue. Also read by the browser tests. */
+  private frozenEnemies = new Set<number>();
+  /** Tick up to which tower shots were already looked at for freezes. */
+  private frozenSeenTick = 0;
   private overlay!: Phaser.GameObjects.Graphics;
 
   private heroCards!: HeroCards;
@@ -330,6 +341,8 @@ export class GameScene extends Phaser.Scene {
     this.remains = [];
     this.remainsSprites = [];
     this.lastDrawn = { tick: this.game_.tick, lives: this.game_.lives };
+    this.frozenEnemies.clear();
+    this.frozenSeenTick = this.game_.tick;
     this.knownLevels.clear();
     this.castEffects = [];
     this.shownCasts.clear();
@@ -375,6 +388,7 @@ export class GameScene extends Phaser.Scene {
     this.stopAimingIfUnavailable();
     this.trackCastEffects();
     this.announceLevelUps();
+    this.trackFrozenEnemies();
     this.syncEnemies(this.game_.phase === 'wave' ? alpha : 0);
     this.syncRemains();
     this.syncHeroes();
@@ -807,6 +821,24 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  /**
+   * Notes the enemies frozen by a tower shot since the last frame, and lets go
+   * of those that thawed. A stun from anything else is not ice and is not tinted.
+   */
+  private trackFrozenEnemies(): void {
+    const { game_: game, level } = this;
+    for (const tower of game.towers) {
+      const shot = tower.lastShot;
+      if (!shot?.struck || shot.tick <= this.frozenSeenTick || !towerStats(level, tower).stunTicks) continue;
+      for (const hit of shot.struck) this.frozenEnemies.add(hit.id);
+    }
+    this.frozenSeenTick = game.tick;
+    const stunned = new Set(game.enemies.filter((enemy) => enemy.stunTicks > 0).map((enemy) => enemy.id));
+    for (const id of this.frozenEnemies) {
+      if (!stunned.has(id)) this.frozenEnemies.delete(id);
+    }
+  }
+
   /** Aiming ends by itself if the hero dies or the wave finishes meanwhile. */
   private stopAimingIfUnavailable(): void {
     if (!this.aim) return;
@@ -915,7 +947,7 @@ export class GameScene extends Phaser.Scene {
     }
     for (const tower of game.towers) {
       if (!isNew(tower.lastShot)) continue;
-      const stats = level.towerTypes[tower.type].levels[tower.level];
+      const stats = towerStats(level, tower);
       strikes.push({ from: level.buildSlots[tower.slot], at: tower.lastShot, reach: STRIKE_MARGIN + stats.splashRadius });
     }
     return strikes;
@@ -1042,7 +1074,8 @@ export class GameScene extends Phaser.Scene {
         .setFrame(view.frame)
         .setPosition(drawn.x, drawn.y + FOOT_DROP - lift);
       setDepthIfChanged(view.sprite, unitDepth(ground.y + FOOT_DROP, flying, level.height));
-      paintTint(view.sprite, hitTint(sinceHit));
+      // A hit flashes over the ice; between hits a frozen enemy stays icy blue.
+      paintTint(view.sprite, hitTint(sinceHit) ?? (this.frozenEnemies.has(enemy.id) ? FROZEN : null));
       // The shadow lies where the feet would stand.
       view.shadow?.setPosition(drawn.x, drawn.y + FOOT_DROP - 2);
       // Rings and health bars go around the body, and keep still through its moves.
@@ -1109,6 +1142,27 @@ export class GameScene extends Phaser.Scene {
     });
     const labels = [...this.heroViews.values()].map((view) => view.label.depth);
     return { tick: this.game_.tick, units, bodies, lowestMarkDepth: Math.min(this.overlay.depth, ...labels) };
+  }
+
+  /**
+   * The towers as drawn, for the browser tests: the open menu, each tower's
+   * level badge, and the frozen enemies with their tint. Reads only.
+   */
+  describeTowersForTests() {
+    return {
+      menu: this.towerMenu.describeForTests(),
+      towers: this.game_.towers.map((tower) => {
+        const label = this.towerViews.get(tower.id)?.label;
+        return {
+          slot: tower.slot,
+          level: tower.level,
+          branch: tower.branch,
+          badgeText: label?.text ?? null,
+          badgeColor: label?.style.backgroundColor || null,
+        };
+      }),
+      frozen: [...this.frozenEnemies].map((id) => ({ id, tint: this.enemyViews.get(id)?.sprite.tintTopLeft ?? null })),
+    };
   }
 
   private leaveRemains(id: number, view: EnemyView, tick: number): void {
@@ -1182,11 +1236,21 @@ export class GameScene extends Phaser.Scene {
           })
           .setOrigin(0.5)
           .setDepth(2);
-        view = { base, icon, label };
+        view = { base, icon, label, badge: null };
         this.towerViews.set(tower.id, view);
       }
-      // The number is the tower's level.
+      // The number is the tower's level; a specialized tower's sits on a badge
+      // in the colour of its branch (the ring around it is drawn with the overlay).
       view.label.setText(String(tower.level + 1));
+      const badge = tower.branch === null ? null : (BRANCH_STYLE[tower.branch]?.color ?? null);
+      if (badge !== view.badge) {
+        view.badge = badge;
+        if (badge === null) {
+          view.label.setBackgroundColor('').setPadding(0).setColor('#ffffff').setStroke('#10140d', 3);
+        } else {
+          view.label.setBackgroundColor(cssColor(badge)).setPadding(4, 1).setColor('#10140d').setStroke('#10140d', 0);
+        }
+      }
     }
     for (const [id, view] of this.towerViews) {
       if (!standing.has(id)) {
@@ -1443,6 +1507,11 @@ function paintTint(sprite: Phaser.GameObjects.Image, tint: Tint | null): void {
   if (!tint) sprite.clearTint();
   else if (tint.fill) sprite.setTintFill(tint.color);
   else sprite.setTint(tint.color);
+}
+
+/** `0xrrggbb` as the `#rrggbb` text styles take. */
+function cssColor(color: number): string {
+  return `#${color.toString(16).padStart(6, '0')}`;
 }
 
 /** An id for a new game: unique enough to tell one player's games apart. */

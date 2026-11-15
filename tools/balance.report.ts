@@ -39,6 +39,13 @@ const BOTS: Bot[] = [
   { name: 'basic towers only', build: BASIC_TOWERS, usesAbilities: false },
   { name: 'basic towers + abilities', build: BASIC_TOWERS, usesAbilities: true },
   { name: 'mixed towers + abilities', build: MIXED_TOWERS, usesAbilities: true },
+  // The same, spending the gold left over on specializations.
+  {
+    name: 'mixed + branches + abilities',
+    build: MIXED_TOWERS,
+    usesAbilities: true,
+    branches: { archery: 'lluvia', cannon: 'bombarda', ice: 'escarcha', arcane: 'rayo' },
+  },
 ];
 
 const SEEDS = [3, 5, 11];

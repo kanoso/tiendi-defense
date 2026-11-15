@@ -1,4 +1,5 @@
 import {
+  branchCost,
   canUseAbility,
   createGame,
   distanceToExit,
@@ -20,6 +21,8 @@ export interface Bot {
   /** Slots in the order they get built, and what goes on each. Empty for no towers. */
   build: readonly { slot: number; tower: string }[];
   usesAbilities: boolean;
+  /** The branch each tower type takes once nothing cheaper is left to buy. Missing for none. */
+  branches?: Readonly<Record<string, string>>;
 }
 
 export interface Result {
@@ -85,7 +88,17 @@ export function decide(game: GameState, level: Level, bot: Bot): Command[] {
       const cost = upgradeCost(level, tower);
       return cost !== null && game.gold >= cost;
     });
-    if (affordable) commands.push({ type: 'upgradeTower', slot: affordable.slot });
+    if (affordable) {
+      commands.push({ type: 'upgradeTower', slot: affordable.slot });
+    } else if (bot.branches) {
+      // Spare gold with every plain upgrade bought: specialize a tower at its last base level.
+      const branches = bot.branches;
+      const ready = game.towers.find((tower) => {
+        const cost = Object.hasOwn(branches, tower.type) ? branchCost(level, tower, branches[tower.type]) : null;
+        return cost !== null && game.gold >= cost;
+      });
+      if (ready) commands.push({ type: 'specializeTower', slot: ready.slot, branch: branches[ready.type] });
+    }
   }
 
   if (bot.usesAbilities) {

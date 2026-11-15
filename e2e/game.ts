@@ -124,6 +124,51 @@ export function giveHeroesLevel(page: Page, heroLevel: number): Promise<void> {
   }, heroLevel);
 }
 
+/** Test setup only: sets the gold, as if it had been earned. */
+export function giveGold(page: Page, gold: number): Promise<void> {
+  return page.evaluate((amount) => {
+    (window as any).__game.scene.getScene('game').game_.gold = amount;
+  }, gold);
+}
+
+/** The tower on a slot as the game holds it, branch included, or null. */
+export function towerOn(
+  page: Page,
+  slot: number,
+): Promise<{ type: string; level: number; branch: string | null; invested: number } | null> {
+  return page.evaluate((wanted) => {
+    const tower = (window as any).__game.scene.getScene('game').game_.towers.find((t: any) => t.slot === wanted);
+    return tower ? { type: tower.type, level: tower.level, branch: tower.branch, invested: tower.invested } : null;
+  }, slot);
+}
+
+/** The branches a tower type offers, read from the level the game is running. */
+export function branchesOf(page: Page, towerType: string): Promise<{ id: string; name: string; costs: number[] }[]> {
+  return page.evaluate((type) => {
+    const branches = (window as any).__game.scene.getScene('game').level.towerTypes[type].branches;
+    return branches.map((b: any) => ({ id: b.id, name: b.name, costs: b.levels.map((l: any) => l.cost) }));
+  }, towerType);
+}
+
+/** What a tower type costs to build and take to each base level, read from the running level. */
+export function baseCosts(page: Page, towerType: string): Promise<number[]> {
+  return page.evaluate(
+    (type) => (window as any).__game.scene.getScene('game').level.towerTypes[type].levels.map((l: any) => l.cost),
+    towerType,
+  );
+}
+
+export interface TowersView {
+  menu: { label: string; reason: string | null; x: number; y: number; height: number }[];
+  towers: { slot: number; level: number; branch: string | null; badgeText: string | null; badgeColor: string | null }[];
+  frozen: { id: number; tint: number | null }[];
+}
+
+/** The towers as drawn: open menu, level badges and frozen enemies (see `describeTowersForTests`). */
+export function towersView(page: Page): Promise<TowersView> {
+  return page.evaluate(() => (window as any).__game.scene.getScene('game').describeTowersForTests());
+}
+
 /** Test setup only: ends the game at once, as if the last life had been lost. */
 export function forceDefeat(page: Page): Promise<void> {
   return page.evaluate(() => {

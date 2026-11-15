@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignHeroes, distributeHeroes, heroShare, isAllowed, ownerOf } from './multiplayer';
+import { assignHeroes, distributeHeroes, heroShare, isAllowed, ownerOf, parseCommand } from './multiplayer';
 import type { Command } from './types';
 
 describe('assignHeroes', () => {
@@ -67,10 +67,51 @@ describe('isAllowed', () => {
     expect(isAllowed({ type: 'buildTower', slot: 0, tower: 'archery' }, mine)).toBe(true);
     expect(isAllowed({ type: 'upgradeTower', slot: 0 }, mine)).toBe(true);
     expect(isAllowed({ type: 'sellTower', slot: 0 }, [])).toBe(true);
+    expect(isAllowed({ type: 'specializeTower', slot: 0, branch: 'ballesta' }, [])).toBe(true);
   });
 
   it('never lets a player start the wave directly: that takes everyone being ready', () => {
     expect(isAllowed({ type: 'startWave' }, mine)).toBe(false);
+  });
+});
+
+describe('parseCommand', () => {
+  /** Through text and back, as it travels between machines. */
+  const wire = (command: unknown) => parseCommand(JSON.parse(JSON.stringify(command)));
+
+  it('reads back every kind of order exactly as it was sent', () => {
+    const orders: Command[] = [
+      { type: 'startWave' },
+      { type: 'moveHero', heroId: 1, x: 10.5, y: 20 },
+      { type: 'useAbility', heroId: 2, ability: 1, x: 3, y: 4 },
+      { type: 'buildTower', slot: 3, tower: 'archery' },
+      { type: 'upgradeTower', slot: 3 },
+      { type: 'specializeTower', slot: 3, branch: 'ballesta' },
+      { type: 'sellTower', slot: 3 },
+    ];
+    for (const order of orders) expect(wire(order), order.type).toEqual(order);
+  });
+
+  it('keeps only the fields of a specialization, dropping anything extra', () => {
+    expect(wire({ type: 'specializeTower', slot: 1, branch: 'rayo', gold: 99_999 })).toEqual({
+      type: 'specializeTower',
+      slot: 1,
+      branch: 'rayo',
+    });
+  });
+
+  it('refuses a malformed specialization', () => {
+    for (const junk of [
+      { type: 'specializeTower', slot: 1 },
+      { type: 'specializeTower', slot: 1, branch: 7 },
+      { type: 'specializeTower', slot: 1, branch: null },
+      { type: 'specializeTower', slot: 1, branch: 'x'.repeat(33) },
+      { type: 'specializeTower', slot: -1, branch: 'rayo' },
+      { type: 'specializeTower', slot: 1.5, branch: 'rayo' },
+      { type: 'specializeTower', branch: 'rayo' },
+    ]) {
+      expect(parseCommand(junk), JSON.stringify(junk)).toBeNull();
+    }
   });
 });
 

@@ -1,8 +1,8 @@
 import { strike } from './combat';
-import { sellValue, towerAt, upgradeCost } from './queries';
+import { branchCost, sellValue, towerAt, towerStats, upgradeCost } from './queries';
 import type { GameState, Level } from './types';
 
-// Requests that cannot be honoured (no gold, slot taken, unknown tower) do nothing.
+// Requests that cannot be honoured (no gold, slot taken, unknown tower or branch) do nothing.
 
 export function buildTower(game: GameState, level: Level, slot: number, towerType: string): void {
   if (!Object.hasOwn(level.buildSlots, slot)) return;
@@ -16,6 +16,7 @@ export function buildTower(game: GameState, level: Level, slot: number, towerTyp
     slot,
     type: towerType,
     level: 0,
+    branch: null,
     invested: cost,
     cooldownTicks: 0,
     lastShot: null,
@@ -28,6 +29,18 @@ export function upgradeTower(game: GameState, level: Level, slot: number): void 
   const cost = upgradeCost(level, tower);
   if (cost === null || game.gold < cost) return;
   game.gold -= cost;
+  tower.level++;
+  tower.invested += cost;
+}
+
+/** From the last base level into the first level of one of its branches. */
+export function specializeTower(game: GameState, level: Level, slot: number, branchId: string): void {
+  const tower = towerAt(game, slot);
+  if (!tower) return;
+  const cost = branchCost(level, tower, branchId);
+  if (cost === null || game.gold < cost) return;
+  game.gold -= cost;
+  tower.branch = branchId;
   tower.level++;
   tower.invested += cost;
 }
@@ -49,7 +62,7 @@ export function attackWithTowers(game: GameState, level: Level): void {
   for (const tower of game.towers) {
     if (tower.cooldownTicks > 0) continue;
 
-    const stats = level.towerTypes[tower.type].levels[tower.level];
+    const stats = towerStats(level, tower);
     const shot = strike(game, level, level.buildSlots[tower.slot], stats);
     if (!shot) continue;
     tower.cooldownTicks = stats.attackIntervalTicks;

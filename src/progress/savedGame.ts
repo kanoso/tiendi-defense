@@ -105,7 +105,7 @@ export function parseSavedGame(raw: unknown): SavedGame | null {
     difficulty: difficulty as DifficultyId,
     mode,
     savedAt,
-    state: state as unknown as GameState,
+    state: withDefaults(state as unknown as GameState),
   } satisfies SavedGame;
   return playsOn(saved.state, level) ? saved : null;
 }
@@ -143,8 +143,8 @@ function areHeroesOf(heroes: unknown, level: Level): boolean {
       Array.isArray(hero.abilityCooldowns) &&
       hero.abilityCooldowns.length === type.abilities.length &&
       hero.abilityCooldowns.every(isTicks) &&
-      isNullOr(hero.lastShot, isData) &&
-      isNullOr(hero.lastHeal, isData) &&
+      isNullOr(hero.lastShot, isShot) &&
+      isNullOr(hero.lastHeal, isShot) &&
       isNullOr(hero.lastCast, isData)
     );
   });
@@ -154,18 +154,47 @@ function areTowersOf(towers: unknown, level: Level): boolean {
   if (!Array.isArray(towers)) return false;
   const slots = new Set<number>();
   return towers.every((tower: unknown) => {
-    if (!isData(tower) || typeof tower.type !== 'string') return false;
+    // Own keys only: a name like "constructor" must not find something built in.
+    if (!isData(tower) || typeof tower.type !== 'string' || !Object.hasOwn(level.towerTypes, tower.type)) return false;
     const type = level.towerTypes[tower.type];
-    if (!type || !isWhole(tower.slot, 0, level.buildSlots.length - 1) || slots.has(tower.slot)) return false;
+    if (!isWhole(tower.slot, 0, level.buildSlots.length - 1) || slots.has(tower.slot)) return false;
     slots.add(tower.slot);
+    // Saves from before branches existed have none: the tower has no branch.
+    // A level past the base ones needs a branch, and a branch needs one of them.
+    let levels = type.levels;
+    let min = 0;
+    if (tower.branch !== undefined && tower.branch !== null) {
+      const branch = type.branches?.find((candidate) => candidate.id === tower.branch);
+      if (!branch) return false;
+      levels = [...type.levels, ...branch.levels];
+      min = type.levels.length;
+    }
+    if (!isWhole(tower.level, min, levels.length - 1)) return false;
+    // Never more than every level up to this one cost, so selling cannot mint gold.
+    const mostInvested = levels.slice(0, tower.level + 1).reduce((sum, stats) => sum + stats.cost, 0);
     return (
       isWhole(tower.id, 1) &&
-      isWhole(tower.level, 0, type.levels.length - 1) &&
       isNumber(tower.invested) &&
+      tower.invested >= 0 &&
+      tower.invested <= mostInvested &&
       isTicks(tower.cooldownTicks) &&
-      isNullOr(tower.lastShot, isData)
+      isNullOr(tower.lastShot, isShot)
     );
   });
+}
+
+/** The most enemies one shot may say it struck: more than any tower hits. */
+const MAX_STRUCK = 16;
+
+/** Where and when a shot landed, and whom it struck: what drawing it reads. */
+function isShot(shot: unknown): boolean {
+  if (!isPoint(shot) || !isData(shot) || !isNumber(shot.tick)) return false;
+  if (shot.struck === undefined) return true;
+  return (
+    Array.isArray(shot.struck) &&
+    shot.struck.length <= MAX_STRUCK &&
+    shot.struck.every((hit: unknown) => isPoint(hit) && isData(hit) && isNumber(hit.id))
+  );
 }
 
 function isZone(zone: unknown): boolean {
@@ -176,6 +205,18 @@ function isZone(zone: unknown): boolean {
     typeof zone.damageType === 'string' &&
     typeof zone.hitsFlying === 'boolean'
   );
+}
+
+/**
+ * Fills in what older saves lack, on a copy: towers saved before branches
+ * existed have none, and enemies saved before stuns existed are not stunned.
+ */
+function withDefaults(state: GameState): GameState {
+  return {
+    ...state,
+    towers: state.towers.map((tower) => ({ ...tower, branch: tower.branch ?? null })),
+    enemies: state.enemies.map((enemy) => ({ ...enemy, stunTicks: enemy.stunTicks ?? 0 })),
+  };
 }
 
 /** Whether the game survives being played on: a last guard against anything missed above. */

@@ -183,6 +183,21 @@ describe('turns', () => {
     expect(room.game?.towers).toHaveLength(1);
   });
 
+  it('passes on a tower specialization and plays it on its own game', () => {
+    const { room, ids } = started('Ana', 'Beto');
+    room.game!.gold = 5000;
+    const orders: Command[] = [
+      { type: 'buildTower', slot: 1, tower: 'archery' },
+      { type: 'upgradeTower', slot: 1 },
+      { type: 'upgradeTower', slot: 1 },
+      { type: 'specializeTower', slot: 1, branch: 'lluvia' },
+    ];
+    for (const order of orders) room.submit(ids[0], order);
+    room.tick();
+    expect(last(room, ids[1], 'turn')?.commands).toEqual(orders);
+    expect(room.game?.towers[0]).toMatchObject({ level: 3, branch: 'lluvia' });
+  });
+
   it('sends each order once', () => {
     const { room, ids } = started('Ana');
     room.submit(ids[0], { type: 'buildTower', slot: 1, tower: 'archery' });

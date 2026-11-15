@@ -12,7 +12,7 @@ let game: GameState;
 let before: Heard;
 
 function tower(slot: number, level = 0): GameState['towers'][number] {
-  return { id: slot + 1, slot, type: 'archery', level, invested: 70, cooldownTicks: 0, lastShot: null };
+  return { id: slot + 1, slot, type: 'archery', level, branch: null, invested: 70, cooldownTicks: 0, lastShot: null };
 }
 
 beforeEach(() => {

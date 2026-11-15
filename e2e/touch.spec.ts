@@ -1,5 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
-import { forceDefeat, giveHeroesLevel, openGame, slotPosition, snapshot } from './game';
+import {
+  branchesOf,
+  forceDefeat,
+  giveGold,
+  giveHeroesLevel,
+  openGame,
+  slotPosition,
+  snapshot,
+  towerOn,
+  towersView,
+} from './game';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -186,6 +196,46 @@ test('a tap on the map after the game ended does not restart it by accident', as
   await tap(page, GRASS);
   await page.waitForTimeout(300);
   expect((await snapshot(page)).endTitle).toBe('Derrota');
+});
+
+test('a tower is specialized and upgraded within its branch with taps alone', async ({ page }) => {
+  const SLOW = { timeout: 20_000 };
+  const slot = await slotPosition(page, 1);
+  const towerLevel = () => towerOn(page, 1);
+  /** Taps the slot once the menu from the last tap has closed, and waits for the new one. */
+  const openMenu = async () => {
+    await expect.poll(async () => (await snapshot(page)).menu.length, SLOW).toBe(0);
+    await tap(page, slot);
+    await expect.poll(async () => (await snapshot(page)).menu.length, SLOW).toBeGreaterThan(0);
+  };
+  await giveGold(page, 5000);
+
+  await openMenu();
+  await tap(page, await menuOption(page, 'Arquería'));
+  await expect.poll(async () => (await towerLevel())?.level, SLOW).toBe(0);
+  for (const level of [1, 2]) {
+    await openMenu();
+    await tap(page, await menuOption(page, 'Mejorar'));
+    await expect.poll(async () => (await towerLevel())?.level, SLOW).toBe(level);
+  }
+
+  await openMenu();
+  const [, rain] = await branchesOf(page, 'archery');
+  // Branch buttons are big enough for a finger: over 40 px tall on this small screen.
+  const entry = (await towersView(page)).menu.find((option) => option.label.startsWith(rain.name))!;
+  const box = (await page.locator('canvas').boundingBox())!;
+  expect((entry.height * box.height) / MAP_HEIGHT).toBeGreaterThan(40);
+
+  const gold = (await snapshot(page)).gold;
+  await tap(page, await menuOption(page, rain.name));
+  await expect.poll(async () => (await towerLevel())?.branch, SLOW).toBe(rain.id);
+  expect((await snapshot(page)).gold).toBe(gold - rain.costs[0]);
+
+  await openMenu();
+  await tap(page, await menuOption(page, 'Mejorar'));
+  await expect.poll(async () => (await towerLevel())?.level, SLOW).toBe(4);
+  expect(await towerLevel()).toMatchObject({ branch: rain.id, level: 4 });
+  expect((await snapshot(page)).gold).toBe(gold - rain.costs[0] - rain.costs[1]);
 });
 
 test('a map is picked from the menu with a tap', async ({ page }) => {

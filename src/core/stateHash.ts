@@ -71,6 +71,8 @@ export function hashState(game: GameState): number {
   hash.numbers(game.towers.length);
   for (const tower of game.towers) {
     hash.text(tower.type);
+    // No branch hashes apart from every real one: ids are never empty.
+    hash.text(tower.branch ?? '');
     hash.numbers(tower.id, tower.slot, tower.level, tower.invested, tower.cooldownTicks);
   }
 

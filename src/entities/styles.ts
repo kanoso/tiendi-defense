@@ -80,6 +80,23 @@ export const HERO_STYLE: Record<
   },
 };
 
+/** Lightning that jumps from one enemy to the next. */
+export const LIGHTNING_COLOR = 0xd9c2ff;
+/** How an enemy frozen by an ice tower is coloured. */
+export const FROZEN_TINT = 0x7fd4ff;
+
+/** The colour that marks a tower specialized into each branch: its badge and the ring around it. */
+export const BRANCH_STYLE: Record<string, { color: number }> = {
+  ballesta: { color: 0xf0c060 },
+  lluvia: { color: 0x9be36b },
+  mortero: { color: 0xe08a4a },
+  bombarda: { color: 0xff6a4d },
+  ventisca: { color: 0xd8f4ff },
+  escarcha: { color: 0x6fd3ff },
+  rayo: { color: 0xc9a6ff },
+  desintegrar: { color: 0xff7ad9 },
+};
+
 /** `icon` sits on top of the shared stone base. */
 export const TOWER_STYLE: Record<string, { name: string; icon: SpriteName }> = {
   archery: { name: 'Arquería', icon: 'icon-archery' },

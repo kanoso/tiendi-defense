@@ -24,6 +24,8 @@ export interface EnemyType {
   armor: number;
   /** Flying enemies cannot be blocked and are out of reach of ground-only attacks. */
   flying: boolean;
+  /** Fraction by which stuns and freezes on it are shortened (0.5 = half as long). Zero if missing. */
+  stunResist?: number;
 }
 
 export type DamageType = 'physical' | 'magic';
@@ -97,10 +99,37 @@ export interface TowerLevel {
   damageType: DamageType;
   /** False for towers whose attacks cannot reach flying enemies. */
   hitsFlying: boolean;
+  // The fields below are only set by specialized levels; missing means off.
+  /** Different enemies struck by each shot, each picked like the first. One if missing. */
+  targets?: number;
+  /** Fraction of the target's armor ignored by physical damage, from 0 to 1. */
+  armorPierce?: number;
+  /** Ticks the main target is frozen: it cannot move or attack. */
+  stunTicks?: number;
+  /** Extra enemies the shot jumps to after the first, each the nearest one not hit yet. */
+  chainJumps?: number;
+  /** Furthest a jump can reach from the last enemy hit. */
+  chainRange?: number;
+}
+
+/**
+ * A specialization a tower can take once it reaches its last base level. The
+ * two levels come after the base ones: a tower picks a branch instead of a plain
+ * upgrade, and then upgrades within it.
+ */
+export interface TowerBranch {
+  id: string;
+  /** Shown to the player. */
+  name: string;
+  /** One line about what it does, shown to the player. */
+  blurb: string;
+  levels: readonly [TowerLevel, TowerLevel];
 }
 
 export interface TowerType {
   levels: readonly TowerLevel[];
+  /** What it may specialize into after its last level. Missing for none. */
+  branches?: readonly TowerBranch[];
 }
 
 export interface HeroSpawn {
@@ -172,6 +201,17 @@ export interface Shot {
   tick: number;
   x: number;
   y: number;
+  /**
+   * Every enemy struck directly (not by splash), in the order it was hit. Only
+   * shots that hit several enemies, or freeze them, record it.
+   */
+  struck?: readonly StruckEnemy[];
+}
+
+export interface StruckEnemy {
+  id: number;
+  x: number;
+  y: number;
 }
 
 export interface Hero {
@@ -205,8 +245,13 @@ export interface Tower {
   id: number;
   slot: number;
   type: string;
-  /** Index into the tower type's levels. */
+  /**
+   * Counts the base levels first, then those of its branch: past the base
+   * levels it always has one.
+   */
   level: number;
+  /** Id of the branch it specialized into, or null before it does. */
+  branch: string | null;
   /** Total gold spent on it, used to compute the sale price. */
   invested: number;
   cooldownTicks: number;
@@ -262,4 +307,6 @@ export type Command =
   | { type: 'useAbility'; heroId: number; ability: number; x: number; y: number }
   | { type: 'buildTower'; slot: number; tower: string }
   | { type: 'upgradeTower'; slot: number }
+  /** Takes a tower at its last base level into one of its branches. */
+  | { type: 'specializeTower'; slot: number; branch: string }
   | { type: 'sellTower'; slot: number };
