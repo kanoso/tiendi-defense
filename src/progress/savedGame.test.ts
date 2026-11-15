@@ -204,7 +204,9 @@ describe('reading a saved game that may be broken', () => {
       }
     });
 
-    it('plays a specialized tower on exactly like the game it came from', () => {
+    // The current maps no longer offer branches, but saves from when they did
+    // still hold specialized towers: those load, fight and upgrade as before.
+    it('plays a tower specialized before branches left the map on exactly like the game it came from', () => {
       const { saved } = afterFirstWave();
       const level = playerLevel('meadow', 'normal', 'campaign', {});
       const game = structuredClone(saved.state);
@@ -213,15 +215,34 @@ describe('reading a saved game that may be broken', () => {
         { type: 'buildTower', slot: 1, tower: 'arcane' },
         { type: 'upgradeTower', slot: 1 },
         { type: 'upgradeTower', slot: 1 },
-        { type: 'specializeTower', slot: 1, branch: 'rayo' },
       ]);
+      const rayo = level.towerTypes.arcane.branches!.find((b) => b.id === 'rayo')!;
+      const specialized = game.towers.find((t) => t.slot === 1)!;
+      Object.assign(specialized, { level: 3, branch: 'rayo', invested: specialized.invested + rayo.levels[0].cost });
       const resumed = parseSavedGame(roundTrip({ ...saved, state: game }))!.state;
       expect(resumed.towers.find((t) => t.slot === 1)).toMatchObject({ level: 3, branch: 'rayo' });
       for (const copy of [game, resumed]) {
-        step(copy, level, [{ type: 'startWave' }]);
+        step(copy, level, [{ type: 'upgradeTower', slot: 1 }, { type: 'startWave' }]);
         for (let tick = 0; tick < 600; tick++) step(copy, level);
       }
+      expect(resumed.towers.find((t) => t.slot === 1)).toMatchObject({ level: 4, branch: 'rayo' });
       expect(resumed).toEqual(game);
+    });
+
+    it('takes no new branch on a map without them, after loading', () => {
+      const { saved } = afterFirstWave();
+      const level = playerLevel('meadow', 'normal', 'campaign', {});
+      const resumed = parseSavedGame(roundTrip(saved))!.state;
+      resumed.gold = 5000;
+      step(resumed, level, [
+        { type: 'buildTower', slot: 1, tower: 'arcane' },
+        { type: 'upgradeTower', slot: 1 },
+        { type: 'upgradeTower', slot: 1 },
+      ]);
+      const gold = resumed.gold;
+      step(resumed, level, [{ type: 'specializeTower', slot: 1, branch: 'rayo' }]);
+      expect(resumed.towers.find((t) => t.slot === 1)).toMatchObject({ level: 2, branch: null });
+      expect(resumed.gold).toBe(gold);
     });
 
     it('refuses a branch the tower does not have', () => {

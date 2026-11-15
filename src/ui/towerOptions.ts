@@ -23,7 +23,8 @@ export interface TowerOption {
 
 /**
  * Clear a blocked spot; build on an empty slot; upgrade or sell a tower. At its
- * last base level a tower offers its branches instead of an upgrade.
+ * last base level a tower offers its branches instead of an upgrade, on maps
+ * that have them; elsewhere it is done there, and only selling is left.
  */
 export function towerOptions(game: GameState, level: Level, slot: number): TowerOption[] {
   const clearCost = slotClearCost(game, level, slot);

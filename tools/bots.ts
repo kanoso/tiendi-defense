@@ -42,6 +42,8 @@ export interface Result {
   score: number;
   /** How many enemies of each type reached the exit. */
   leaks: Record<string, number>;
+  /** Gold never spent, when the game ended. */
+  goldLeft: number;
 }
 
 const MAX_TICKS = 60 * 60 * 30;
@@ -78,6 +80,7 @@ export function play(level: Level, bot: Bot, seed: number): Result {
     heroLevels: game.heroes.map((hero) => hero.level),
     minutes: game.tick / 3600,
     score: game.score,
+    goldLeft: game.gold,
   };
 }
 
@@ -133,7 +136,10 @@ export function decide(game: GameState, level: Level, bot: Bot): Command[] {
   return commands;
 }
 
-/** Spare gold with every plain upgrade bought: specialize a tower at its last base level. */
+/**
+ * Spare gold with every plain upgrade bought: specialize a tower at its last base
+ * level. Never on a map without branches, where the price is always missing.
+ */
 function affordableBranch(game: GameState, level: Level, bot: Bot): Command | null {
   const branches = bot.branches;
   if (!branches) return null;

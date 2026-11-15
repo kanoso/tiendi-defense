@@ -47,8 +47,9 @@ const BOTS: Bot[] = [
   { name: 'basic towers only', build: BASIC_TOWERS, usesAbilities: false },
   { name: 'basic towers + abilities', build: BASIC_TOWERS, usesAbilities: true },
   { name: 'mixed towers + abilities', build: MIXED_TOWERS, usesAbilities: true },
-  // The same, spending the gold left over on clearing the four blocked spots
-  // and building on them, then on specializations.
+  // The same, spending the gold left over on specializations, then on clearing
+  // the four blocked spots and building on them. On a map without branches it
+  // only does the spots (see `onLevel`).
   {
     name: 'mixed + branches + abilities',
     build: MIXED_TOWERS,
@@ -74,13 +75,13 @@ it('prints how far each scripted player gets on each map', () => {
   );
   for (const difficulty of DIFFICULTIES) {
     const level = applyDifficulty(MAPS[0].level, difficulty.id);
-    lines.push('', `=== ${MAPS[0].name} · ${difficulty.name} · ${best.name}`);
+    lines.push('', `=== ${MAPS[0].name} · ${difficulty.name} · ${onLevel(level, best).name}`);
     lines.push(...report(level, { ...best, name: 'heroes without ranks' }));
     lines.push(...report(applyHeroRanks(level, maxRanks), { ...best, name: 'heroes at top rank' }));
   }
   // Endless mode has no victory: what matters is how long the best player lasts.
   for (const map of MAPS) {
-    lines.push('', `=== ${map.name} · endless · ${best.name}`);
+    lines.push('', `=== ${map.name} · endless · ${onLevel(map.level, best).name}`);
     for (const [label, level] of [
       ['heroes without ranks', asEndless(map.level, map.endlessExtras)],
       ['heroes at top rank', asEndless(applyHeroRanks(map.level, maxRanks), map.endlessExtras)],
@@ -97,7 +98,14 @@ it('prints how far each scripted player gets on each map', () => {
   console.log(lines.join('\n'));
 });
 
-function report(level: Level, bot: Bot): string[] {
+/** The bot as it plays that level: one that would specialize only takes spots where the map has no branches. */
+function onLevel(level: Level, bot: Bot): Bot {
+  if (level.towerBranches === true || !bot.branches) return bot;
+  return { ...bot, name: bot.name.replace('branches', 'spots'), branches: undefined };
+}
+
+function report(level: Level, given: Bot): string[] {
+  const bot = onLevel(level, given);
   const lines = ['', bot.name];
   for (const seed of SEEDS) {
     const result = play(level, bot, seed);
@@ -108,7 +116,7 @@ function report(level: Level, bot: Bot): string[] {
     lines.push(
       `  ${outcome.padEnd(15)} ${result.minutes.toFixed(1).padStart(4)} min  ` +
         `levels ${result.heroLevels.join('')}  lives ${result.livesByWave.join(',')}`,
-      `  ${''.padEnd(15)} leaked: ${leaks || 'nothing'}`,
+      `  ${''.padEnd(15)} leaked: ${leaks || 'nothing'}  gold left ${result.goldLeft}`,
     );
   }
   return lines;

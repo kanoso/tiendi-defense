@@ -131,6 +131,16 @@ export function giveGold(page: Page, gold: number): Promise<void> {
   }, gold);
 }
 
+/**
+ * Test setup only: turns tower branches on for the level being played, as the
+ * maps that offer them will. None of the current maps does.
+ */
+export function allowBranches(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    (window as any).__game.scene.getScene('game').level.towerBranches = true;
+  });
+}
+
 /** The tower on a slot as the game holds it, branch included, or null. */
 export function towerOn(
   page: Page,

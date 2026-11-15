@@ -3,11 +3,12 @@ import { createGame, step, type Command, type GameState, type Level } from '../c
 import { MAPS } from '../data/maps';
 import { missingGold, towerOptions, towerOptionsKey } from './towerOptions';
 
-const level: Level = { ...MAPS[0].level, startingGold: 5000 };
+// A map that offers branches. The current ones do not; the menu on them is checked below.
+const level: Level = { ...MAPS[0].level, startingGold: 5000, towerBranches: true };
 
-function gameWith(commands: Command[]): GameState {
-  const game = createGame(level, 1);
-  step(game, level, commands);
+function gameWith(commands: Command[], on: Level = level): GameState {
+  const game = createGame(on, 1);
+  step(game, on, commands);
   return game;
 }
 
@@ -47,6 +48,24 @@ describe('the options of a build slot', () => {
     step(specialized, level, [upgrade]);
     expect(labels(specialized)).toHaveLength(1);
     expect(labels(specialized)[0]).toMatch(/^Vender/);
+  });
+});
+
+describe('the options of a tower on a map without branches', () => {
+  const closed: Level = { ...MAPS[0].level, startingGold: 5000 };
+
+  it('offers only selling at the last base level, like a tower at its top', () => {
+    const game = gameWith([build, upgrade, upgrade], closed);
+    const options = towerOptions(game, closed, 0);
+    expect(options.map((option) => option.command.type)).toEqual(['sellTower']);
+    expect(options[0].label).toBe('Vender  +132');
+  });
+
+  it('still offers the next level to a tower that took its branch before', () => {
+    const game = gameWith([build, upgrade, upgrade], closed);
+    const branch = closed.towerTypes.archery.branches![0];
+    Object.assign(game.towers[0], { level: 3, branch: branch.id });
+    expect(towerOptions(game, closed, 0).map((option) => option.label)[0]).toBe(`Mejorar  ${branch.levels[1].cost}`);
   });
 });
 

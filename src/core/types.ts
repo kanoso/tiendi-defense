@@ -215,6 +215,12 @@ export interface Level {
   buildSlots: readonly BuildSlot[];
   /** Fraction of the gold invested in a tower that selling it gives back. */
   sellRefund: number;
+  /**
+   * Whether towers at their last base level may take one of their branches here.
+   * Missing means no: a map opts in. Towers that took a branch before (an old
+   * save) keep it, and keep upgrading within it, either way.
+   */
+  towerBranches?: boolean;
 }
 
 // --- game state: everything that changes while playing ---

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  allowBranches,
   branchesOf,
   forceDefeat,
   giveGold,
@@ -208,6 +209,7 @@ test('a tower is specialized and upgraded within its branch with taps alone', as
     await tap(page, slot);
     await expect.poll(async () => (await snapshot(page)).menu.length, SLOW).toBeGreaterThan(0);
   };
+  await allowBranches(page);
   await giveGold(page, 5000);
 
   await openMenu();

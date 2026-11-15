@@ -183,7 +183,7 @@ describe('turns', () => {
     expect(room.game?.towers).toHaveLength(1);
   });
 
-  it('passes on a tower specialization and plays it on its own game', () => {
+  it('passes on a tower specialization, which its own game ignores on a map without branches', () => {
     const { room, ids } = started('Ana', 'Beto');
     room.game!.gold = 5000;
     const orders: Command[] = [
@@ -195,7 +195,13 @@ describe('turns', () => {
     for (const order of orders) room.submit(ids[0], order);
     room.tick();
     expect(last(room, ids[1], 'turn')?.commands).toEqual(orders);
-    expect(room.game?.towers[0]).toMatchObject({ level: 3, branch: 'lluvia' });
+    expect(room.game?.towers[0]).toMatchObject({ level: 2, branch: null });
+    // Every player replays the same turn on the same level: their games stay equal to the room's.
+    const level = coopLevel('meadow', 'normal', 2);
+    const copy = createGame(level, 42);
+    copy.gold = 5000;
+    for (let tick = 0; tick < TURN_TICKS; tick++) step(copy, level, tick === 0 ? orders : []);
+    expect(hashState(copy)).toBe(hashState(room.game!));
   });
 
   it('passes on clearing a blocked spot and plays it on its own game, from any player', () => {

@@ -114,17 +114,20 @@ export function towerStats(level: Level, tower: Tower): TowerLevel {
 
 /**
  * Cost of the tower's next level, or null when there is none to upgrade to:
- * at the top, or at the last base level, where a branch has to be chosen.
+ * at the top, or at the last base level, where a branch has to be chosen (or,
+ * on a map without branches, where the tower is done).
  */
 export function upgradeCost(level: Level, tower: Tower): number | null {
   return levelAt(level, tower, tower.level + 1)?.cost ?? null;
 }
 
 /**
- * Cost of specializing the tower into a branch, or null when it cannot: it is
- * not at its last base level, it already has a branch, or its type has no such branch.
+ * Cost of specializing the tower into a branch, or null when it cannot: the map
+ * offers no branches, the tower is not at its last base level, it already has a
+ * branch, or its type has no such branch.
  */
 export function branchCost(level: Level, tower: Tower, branchId: string): number | null {
+  if (level.towerBranches !== true) return null;
   const type = level.towerTypes[tower.type];
   if (tower.branch !== null || tower.level !== type.levels.length - 1) return null;
   return type.branches?.find((branch) => branch.id === branchId)?.levels[0].cost ?? null;

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { applyDifficulty } from '../data/difficulty';
+import { asEndless } from '../data/endless';
 import { MAPS } from '../data/maps';
+import { coopLevel } from '../net/coopLevel';
+import { playerLevel } from '../progress/savedGame';
+import { applyHeroRanks } from '../progress/upgrades';
 import { castAbility } from './abilities';
 import { strike, type Attack } from './combat';
 import { createPath } from './path';
@@ -135,6 +140,7 @@ function makeLevel(overrides: Partial<Level> = {}): Level {
     },
     buildSlots: [{ x: 300, y: 40 }],
     sellRefund: 0.6,
+    towerBranches: true,
     ...overrides,
   };
 }
@@ -298,6 +304,79 @@ describe('specializing a tower', () => {
       expect(branchCost(done.level, done.game.towers[0], 'triple')).toBeNull();
       expect(upgradeCost(done.level, done.game.towers[0])).toBe(BOW_COSTS.heavy5);
     });
+  });
+});
+
+describe('a map without branches', () => {
+  const closed: Partial<Level> = { towerBranches: false };
+  const goldAfterThird = 1000 - BASE_TOTAL;
+
+  it('leaves branches off unless the map turns them on', () => {
+    const { towerBranches: _, ...withoutFlag } = makeLevel();
+    const game = createGame(withoutFlag, 1);
+    step(game, withoutFlag, [...TO_THIRD, specialize('heavy')]);
+    expect(game.towers[0]).toMatchObject({ level: 2, branch: null });
+  });
+
+  it('ignores a specialization, keeping the gold', () => {
+    const { game } = after([...TO_THIRD, specialize('heavy'), specialize('triple')], closed);
+    expect(game.towers[0]).toMatchObject({ level: 2, branch: null, invested: BASE_TOTAL });
+    expect(game.gold).toBe(goldAfterThird);
+  });
+
+  it('has the tower maxed at its last base level: no upgrade and no branch price', () => {
+    const { game, level } = after(TO_THIRD, closed);
+    const tower = game.towers[0];
+    expect(upgradeCost(level, tower)).toBeNull();
+    expect(branchCost(level, tower, 'heavy')).toBeNull();
+    expect(branchCost(level, tower, 'triple')).toBeNull();
+  });
+
+  it('keeps a tower specialized before, as an old save brings it: it fights and upgrades within its branch', () => {
+    const { game, level } = after(TO_THIRD, closed);
+    Object.assign(game.towers[0], { level: 3, branch: 'heavy', invested: BASE_TOTAL + BOW_COSTS.heavy4 });
+    expect(towerStats(level, game.towers[0]).damage).toBe(50);
+    expect(upgradeCost(level, game.towers[0])).toBe(BOW_COSTS.heavy5);
+    step(game, level, [upgrade]);
+    expect(game.towers[0]).toMatchObject({ level: 4, branch: 'heavy' });
+    expect(towerStats(level, game.towers[0]).damage).toBe(80);
+    expect(game.gold).toBe(goldAfterThird - BOW_COSTS.heavy5);
+    // Never into another branch, though.
+    step(game, level, [specialize('triple')]);
+    expect(game.towers[0]).toMatchObject({ level: 4, branch: 'heavy' });
+  });
+
+  it('keeps every copy of a shared game equal when someone sends a specialization anyway', () => {
+    const play = (commands: Command[]) => {
+      const level = makeLevel(closed);
+      const game = createGame(level, 3);
+      step(game, level, commands);
+      step(game, level, [{ type: 'startWave' }]);
+      for (let tick = 0; tick < 300; tick++) step(game, level);
+      return hashState(game);
+    };
+    const sent = [...TO_THIRD, specialize('heavy')];
+    expect(play(sent)).toBe(play(sent));
+    // As harmless as never sending it.
+    expect(play(sent)).toBe(play(TO_THIRD));
+  });
+
+  it('is how the three current maps are played, at any difficulty, in any mode', () => {
+    for (const map of MAPS) {
+      expect(map.level.towerBranches ?? false, map.id).toBe(false);
+      for (const mode of ['campaign', 'endless'] as const) {
+        expect(playerLevel(map.id, 'hard', mode, {}).towerBranches ?? false, `${map.id} ${mode}`).toBe(false);
+      }
+      expect(coopLevel(map.id, 'normal', 2).towerBranches ?? false, map.id).toBe(false);
+    }
+  });
+
+  it('survives every way a level is built for play, once a map turns them on', () => {
+    const open: Level = { ...MAPS[0].level, towerBranches: true };
+    const ranks = Object.fromEntries(Object.keys(open.heroTypes).map((type) => [type, 1]));
+    expect(applyDifficulty(open, 'hard').towerBranches).toBe(true);
+    expect(applyHeroRanks(open, ranks).towerBranches).toBe(true);
+    expect(asEndless(open).towerBranches).toBe(true);
   });
 });
 
@@ -672,7 +751,7 @@ describe('the branches of the real towers', () => {
   });
 
   it('lets Bombarda fire as often as its stats say once specialized', () => {
-    const real: Level = { ...level, startingGold: 5000, waves: [[{ enemy: 'boss', count: 1, intervalTicks: 0, delayTicks: 0 }]] };
+    const real: Level = { ...level, towerBranches: true, startingGold: 5000, waves: [[{ enemy: 'boss', count: 1, intervalTicks: 0, delayTicks: 0 }]] };
     const game = createGame(real, 1);
     step(game, real, [
       { type: 'buildTower', slot: 0, tower: 'cannon' },
@@ -695,7 +774,7 @@ describe('the branches of the real towers', () => {
 });
 
 describe('determinism with specializations', () => {
-  const real: Level = { ...MAPS[0].level, startingGold: 5000 };
+  const real: Level = { ...MAPS[0].level, towerBranches: true, startingGold: 5000 };
 
   /** Builds four towers, specializes them, then plays every wave it can. */
   function play(seed: number, branches: string[] = ['ballesta', 'bombarda', 'escarcha', 'rayo']): GameState {
