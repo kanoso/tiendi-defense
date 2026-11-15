@@ -26,6 +26,38 @@ export interface EnemyType {
   flying: boolean;
   /** Fraction by which stuns and freezes on it are shortened (0.5 = half as long). Zero if missing. */
   stunResist?: number;
+  // The traits below belong to a few enemies only; missing means off.
+  /** Fraction of magic damage it shrugs off: the mirror of `armor`, which only stops physical. */
+  magicResist?: number;
+  /** Heals the other enemies around it, never itself. */
+  healAura?: HealAura;
+  /** The first time it is killed it gets back up where it fell. */
+  revive?: Revive;
+  /** When killed it falls apart into several smaller enemies. */
+  splitInto?: Split;
+}
+
+export interface HealAura {
+  radius: number;
+  /** Health given back to each wounded enemy in the radius on every heal. */
+  amount: number;
+  /** Ticks between two heals. It only heals when someone near is wounded. */
+  intervalTicks: number;
+}
+
+export interface Revive {
+  /** Health it gets back up with, as a fraction of its maximum. */
+  hpFraction: number;
+  /** Ticks it lies on the road before it stands. Nothing can touch it meanwhile. */
+  delayTicks: number;
+}
+
+export interface Split {
+  /** Key into the level's enemy types. */
+  type: string;
+  count: number;
+  /** Pixels along the road between two of them, spread around where it fell. */
+  spacing: number;
 }
 
 export type DamageType = 'physical' | 'magic';
@@ -206,6 +238,17 @@ export interface Enemy {
   slowFactor: number;
   /** Ticks left unable to move or attack. */
   stunTicks: number;
+  /** Ticks until it can heal again. Only enemies with a heal aura use it. */
+  healCooldownTicks: number;
+  /** Whether it already got back up once: the next death is for good. */
+  revived: boolean;
+}
+
+/** A killed enemy that will get back up. Off the road meanwhile: nothing can touch it. */
+export interface RisingEnemy {
+  /** As it was killed; it stands up with the same id, at the same spot. */
+  enemy: Enemy;
+  ticksLeft: number;
 }
 
 /** Where and when something landed. Kept only so the renderer can draw it. */
@@ -294,6 +337,8 @@ export interface GameState {
   spawnQueue: PendingSpawn[];
   nextEnemyId: number;
   enemies: Enemy[];
+  /** Killed enemies lying on the road until they get back up, in the order they fell. */
+  rising: RisingEnemy[];
   heroes: Hero[];
   nextTowerId: number;
   towers: Tower[];

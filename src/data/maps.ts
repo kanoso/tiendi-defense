@@ -1,5 +1,6 @@
 import { createPath } from '../core/path';
 import type { Level } from '../core/simulation';
+import type { EndlessGroup } from '../core/waves';
 import { GAME_WIDTH, sharedRules, standardWaves } from './rules';
 
 export interface GameMap {
@@ -10,6 +11,11 @@ export interface GameMap {
   /** One line for the map picker. */
   blurb: string;
   level: Level;
+  /**
+   * Groups this map adds to the shared endless schedule, such as enemies that
+   * only it sends. Missing for none.
+   */
+  endlessExtras?: readonly EndlessGroup[];
 }
 
 // Roads start and end 30 px outside the 960 x 540 map, so enemies walk in and out.

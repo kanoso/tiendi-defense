@@ -30,6 +30,11 @@ export const UNIT_SHEETS = {
   'enemy-armored': { frameWidth: 16, frameHeight: 23, bodyRows: 18, hasHit: false },
   'enemy-flyer': { frameWidth: 16, frameHeight: 16, bodyRows: 14, hasHit: false },
   'enemy-boss': { frameWidth: 32, frameHeight: 36, bodyRows: 34, hasHit: false },
+  'enemy-shaman': { frameWidth: 16, frameHeight: 23, bodyRows: 17, hasHit: false },
+  'enemy-skeleton': { frameWidth: 16, frameHeight: 16, bodyRows: 16, hasHit: false },
+  'enemy-big-zombie': { frameWidth: 32, frameHeight: 36, bodyRows: 33, hasHit: false },
+  'enemy-tiny-zombie': { frameWidth: 16, frameHeight: 16, bodyRows: 12, hasHit: false },
+  'enemy-ogre': { frameWidth: 32, frameHeight: 36, bodyRows: 28, hasHit: false },
 } as const satisfies Record<string, UnitSheet>;
 
 export type UnitName = keyof typeof UNIT_SHEETS;
@@ -137,6 +142,21 @@ export function unitDepth(feetY: number, flying: boolean, mapHeight: number): nu
   const band = flying ? FLYING_DEPTH : GROUND_DEPTH;
   const down = Math.min(1, Math.max(0, Math.round(feetY) / mapHeight));
   return band.min + (band.max - band.min) * down;
+}
+
+// Bodies of killed enemies lie under every living unit, above the towers and shadows.
+const REMAINS_DEPTH = { min: 2.02, max: 2.08 };
+/** The dust of a zombie bursting: over the body it came from, under the small zombies it let out. */
+export const BURST_DEPTH = 2.09;
+
+/**
+ * The depth to draw a killed enemy's body whose feet are at `feetY`: behind the
+ * living, so what comes out of it (the small zombies a big one splits into)
+ * shows in front. Among bodies, the one lower on the screen is in front.
+ */
+export function remainsDepth(feetY: number, mapHeight: number): number {
+  const down = Math.min(1, Math.max(0, Math.round(feetY) / mapHeight));
+  return REMAINS_DEPTH.min + (REMAINS_DEPTH.max - REMAINS_DEPTH.min) * down;
 }
 
 /** How far above its map point the middle of a unit's body is drawn. */

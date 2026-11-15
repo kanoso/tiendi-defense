@@ -169,6 +169,8 @@ function place(game: GameState, distance: number, type = 'brute', extra: Partial
     slowTicks: 0,
     slowFactor: 1,
     stunTicks: 0,
+    healCooldownTicks: 0,
+    revived: false,
     ...extra,
   };
   game.enemies.push(enemy);

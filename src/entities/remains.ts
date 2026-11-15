@@ -58,6 +58,19 @@ export interface FrameLosses {
   outOfLives: boolean;
 }
 
+/**
+ * Which of the enemies drawn last frame are gone from the game. One lying on
+ * the road, waiting to rise, is still there; one that split is gone, and the
+ * smaller ones it left are new.
+ */
+export function vanishedIds(
+  drawn: Iterable<number>,
+  game: { enemies: readonly { id: number }[]; rising: readonly { enemy: { id: number } }[] },
+): number[] {
+  const present = new Set([...game.enemies.map((enemy) => enemy.id), ...game.rising.map((fallen) => fallen.enemy.id)]);
+  return [...drawn].filter((id) => !present.has(id));
+}
+
 /** More enemies than this reaching the exit in one frame are not worth telling apart. */
 const MAX_SUSPECTS = 10;
 

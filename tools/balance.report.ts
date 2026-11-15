@@ -82,8 +82,8 @@ it('prints how far each scripted player gets on each map', () => {
   for (const map of MAPS) {
     lines.push('', `=== ${map.name} · endless · ${best.name}`);
     for (const [label, level] of [
-      ['heroes without ranks', asEndless(map.level)],
-      ['heroes at top rank', asEndless(applyHeroRanks(map.level, maxRanks))],
+      ['heroes without ranks', asEndless(map.level, map.endlessExtras)],
+      ['heroes at top rank', asEndless(applyHeroRanks(map.level, maxRanks), map.endlessExtras)],
     ] as const) {
       const runs = SEEDS.map((seed) => play(level, best, seed));
       lines.push(

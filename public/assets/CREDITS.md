@@ -33,6 +33,11 @@ el cuadro de golpe (`hit_anim_f0`).
 | `enemy-armored.png` | `masked_orc` | 16 × 23 | No |
 | `enemy-flyer.png` | `imp` | 16 × 16 | No |
 | `enemy-boss.png` | `big_demon` | 32 × 36 | No |
+| `enemy-shaman.png` | `orc_shaman` | 16 × 23 | No |
+| `enemy-skeleton.png` | `skelet` | 16 × 16 | No |
+| `enemy-big-zombie.png` | `big_zombie` | 32 × 36 | No |
+| `enemy-tiny-zombie.png` | `tiny_zombie` | 16 × 16 | No |
+| `enemy-ogre.png` | `ogre` | 32 × 36 | No |
 
 Si se cambia el tamaño de los cuadros o su cantidad, hay que actualizar
 `UNIT_SHEETS` en `src/entities/units.ts`; una prueba comprueba que coincidan.

@@ -67,6 +67,69 @@ const enemyTypes: Record<string, EnemyType> = {
     // Stuns and freezes last half as long: a single ice tower must not hold it in place.
     stunResist: 0.5,
   },
+  // The enemies below have a trait of their own. The first three maps never send
+  // them; maps built around them add them to their waves and their endless mode.
+  // Chamán: every two seconds heals the wounded around it (never itself). Kill it first.
+  shaman: {
+    ...plainEnemy,
+    maxHp: 260,
+    speed: 50,
+    bounty: 10,
+    livesCost: 1,
+    damage: 5,
+    attackIntervalTicks: 60,
+    xp: 8,
+    healAura: { radius: 90, amount: 25, intervalTicks: 120 },
+  },
+  // Esqueleto: the first time it is killed it gets back up where it fell, with
+  // half its health. It pays only when it falls for good.
+  skeleton: {
+    ...plainEnemy,
+    maxHp: 190,
+    speed: 65,
+    bounty: 7,
+    livesCost: 1,
+    damage: 7,
+    attackIntervalTicks: 55,
+    xp: 6,
+    revive: { hpFraction: 0.5, delayTicks: 120 },
+  },
+  // Zombi gigante: slow and tough, and when killed it falls apart into three small zombies.
+  big_zombie: {
+    ...plainEnemy,
+    maxHp: 900,
+    speed: 35,
+    bounty: 14,
+    livesCost: 2,
+    damage: 18,
+    attackIntervalTicks: 80,
+    xp: 12,
+    splitInto: { type: 'tiny_zombie', count: 3, spacing: 14 },
+  },
+  // Zombi pequeño: weak and quick. Only comes out of a big zombie.
+  tiny_zombie: {
+    ...plainEnemy,
+    maxHp: 70,
+    speed: 95,
+    bounty: 1,
+    livesCost: 1,
+    damage: 3,
+    attackIntervalTicks: 40,
+    xp: 1,
+  },
+  // Ogro: very slow and very tough, and shrugs off half of magic damage, the
+  // mirror of the armored one. Physical damage is the answer.
+  ogre: {
+    ...plainEnemy,
+    maxHp: 1500,
+    speed: 28,
+    bounty: 25,
+    livesCost: 3,
+    damage: 32,
+    attackIntervalTicks: 90,
+    xp: 20,
+    magicResist: 0.5,
+  },
 };
 
 /** A hero with no special traits. Each hero overrides what makes it different. */

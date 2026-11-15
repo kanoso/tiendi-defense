@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createGame, step, waveAt } from '../core/simulation';
 import { asEndless, endlessRules } from './endless';
 import { MAPS } from './maps';
+import { standardWaves } from './rules';
 
 const level = MAPS[0].level;
 
@@ -41,6 +42,36 @@ describe('asEndless', () => {
     expect(level.endless).toBeNull();
     expect(level.waves.length).toBeGreaterThan(0);
   });
+
+  it("adds a map's own groups after the shared ones, which keep their roads", () => {
+    const extra = {
+      enemy: 'ogre',
+      fromWave: 0,
+      everyWaves: 1,
+      baseCount: 1,
+      countPerWave: 0,
+      intervalTicks: 60,
+      intervalDropPerWave: 0,
+      minIntervalTicks: 60,
+      delayTicks: 0,
+    };
+    const endless = asEndless(level, [extra]);
+    expect(endless.endless?.groups).toEqual([...endlessRules.groups, extra]);
+    expect(waveAt(endless, 0).map((group) => group.enemy)).toEqual(['soldier', 'ogre']);
+    expect(waveAt(endless, 4).slice(0, -1)).toEqual(waveAt(asEndless(level), 4));
+  });
+});
+
+describe('the maps', () => {
+  it('add no enemies of their own to endless mode on the first three maps', () => {
+    for (const map of MAPS.slice(0, 3)) expect(map.endlessExtras ?? [], map.id).toEqual([]);
+  });
+
+  it('only add enemies the game knows', () => {
+    for (const map of MAPS) {
+      for (const group of map.endlessExtras ?? []) expect(Object.keys(map.level.enemyTypes)).toContain(group.enemy);
+    }
+  });
 });
 
 describe('endless rules', () => {
@@ -61,12 +92,13 @@ describe('endless rules', () => {
     expect(enemiesIn(40)).toBeGreaterThan(enemiesIn(10));
   });
 
-  it('bring every kind of enemy within the first ten waves', () => {
+  it('bring every kind of enemy the campaign sends within the first ten waves, and no other', () => {
     const seen = new Set<string>();
     for (let wave = 0; wave < 10; wave++) {
       for (const group of waveAt(asEndless(level), wave)) seen.add(group.enemy);
     }
-    expect([...seen].sort()).toEqual(Object.keys(level.enemyTypes).sort());
+    const campaign = new Set(standardWaves.flatMap((wave) => wave.map((group) => group.enemy)));
+    expect([...seen].sort()).toEqual([...campaign].sort());
   });
 
   it('use both roads on a map that has two', () => {

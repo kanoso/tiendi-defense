@@ -1,6 +1,6 @@
 import { updateZones } from './abilities';
 import { applyCommand } from './commands';
-import { collectBounties, moveEnemies, spawnDueEnemies, tickStuns } from './enemies';
+import { collectBounties, healWithEnemies, moveEnemies, raiseFallen, spawnDueEnemies, tickStuns } from './enemies';
 import {
   attackBlockers,
   attackWithHeroes,
@@ -28,6 +28,7 @@ export function createGame(level: Level, seed: number): GameState {
     spawnQueue: [],
     nextEnemyId: 1,
     enemies: [],
+    rising: [],
     heroes: level.heroes.map((spawn, index) => ({
       id: index + 1,
       type: spawn.type,
@@ -71,6 +72,7 @@ export function step(game: GameState, level: Level, commands: readonly Command[]
 
   if (game.phase !== 'wave') return;
   spawnDueEnemies(game, level);
+  raiseFallen(game, level);
   game.waveTick++;
   updateBlocks(game, level);
   updateZones(game, level);
@@ -80,6 +82,7 @@ export function step(game: GameState, level: Level, commands: readonly Command[]
     return;
   }
   attackBlockers(game, level);
+  healWithEnemies(game, level);
   tickStuns(game);
   healWithHeroes(game, level);
   attackWithHeroes(game, level);
@@ -89,7 +92,7 @@ export function step(game: GameState, level: Level, commands: readonly Command[]
 }
 
 function finishWaveIfCleared(game: GameState, level: Level): void {
-  if (game.spawnQueue.length > 0 || game.enemies.length > 0) return;
+  if (game.spawnQueue.length > 0 || game.enemies.length > 0 || game.rising.length > 0) return;
   restoreHeroes(game, level);
   game.zones = [];
   game.score += level.scorePerWave;

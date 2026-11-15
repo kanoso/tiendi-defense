@@ -37,6 +37,11 @@ export const ENEMY_STYLE: Record<string, { radius: number; sprite: UnitName; sca
   armored: { radius: 14, sprite: 'enemy-armored', scale: 2 },
   flyer: { radius: 11, sprite: 'enemy-flyer', scale: 2 },
   boss: { radius: 22, sprite: 'enemy-boss', scale: 2 },
+  shaman: { radius: 13, sprite: 'enemy-shaman', scale: 2 },
+  skeleton: { radius: 12, sprite: 'enemy-skeleton', scale: 2 },
+  big_zombie: { radius: 21, sprite: 'enemy-big-zombie', scale: 2 },
+  tiny_zombie: { radius: 9, sprite: 'enemy-tiny-zombie', scale: 2 },
+  ogre: { radius: 21, sprite: 'enemy-ogre', scale: 2 },
 };
 
 /** Keys that trigger a hero's abilities, in the order the hero type lists them. */

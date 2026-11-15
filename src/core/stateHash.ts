@@ -1,4 +1,4 @@
-import type { GameState } from './types';
+import type { Enemy, GameState } from './types';
 
 const PHASES = ['preparing', 'wave', 'won', 'lost'];
 
@@ -32,21 +32,12 @@ export function hashState(game: GameState): number {
   }
 
   hash.numbers(game.enemies.length);
-  for (const enemy of game.enemies) {
-    hash.text(enemy.type);
-    hash.numbers(
-      enemy.id,
-      enemy.path,
-      enemy.distance,
-      enemy.hp,
-      enemy.maxHp,
-      enemy.speed,
-      enemy.blockedBy ?? -1,
-      enemy.attackCooldownTicks,
-      enemy.slowTicks,
-      enemy.slowFactor,
-      enemy.stunTicks,
-    );
+  for (const enemy of game.enemies) hashEnemy(hash, enemy);
+
+  hash.numbers(game.rising.length);
+  for (const fallen of game.rising) {
+    hash.numbers(fallen.ticksLeft);
+    hashEnemy(hash, fallen.enemy);
   }
 
   hash.numbers(game.heroes.length);
@@ -92,6 +83,25 @@ export function hashState(game: GameState): number {
     );
   }
   return hash.value;
+}
+
+function hashEnemy(hash: Fnv1a, enemy: Enemy): void {
+  hash.text(enemy.type);
+  hash.numbers(
+    enemy.id,
+    enemy.path,
+    enemy.distance,
+    enemy.hp,
+    enemy.maxHp,
+    enemy.speed,
+    enemy.blockedBy ?? -1,
+    enemy.attackCooldownTicks,
+    enemy.slowTicks,
+    enemy.slowFactor,
+    enemy.stunTicks,
+    enemy.healCooldownTicks,
+    enemy.revived ? 1 : 0,
+  );
 }
 
 /** FNV-1a, 32 bits: small, fast and identical on every JavaScript engine. */

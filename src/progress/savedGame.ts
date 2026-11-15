@@ -31,9 +31,10 @@ export function playerLevel(
   mode: GameMode,
   heroRanks: Readonly<Record<string, number>>,
 ): Level {
-  const atDifficulty = applyDifficulty(findMap(mapId).level, difficulty);
+  const map = findMap(mapId);
+  const atDifficulty = applyDifficulty(map.level, difficulty);
   const withRanks = applyHeroRanks(atDifficulty, heroRanks);
-  return mode === 'endless' ? asEndless(withRanks) : withRanks;
+  return mode === 'endless' ? asEndless(withRanks, map.endlessExtras) : withRanks;
 }
 
 /** A save of the game as it is now. A copy: the game going on does not change it. */
@@ -80,6 +81,11 @@ const isData = (value: unknown): value is Data =>
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const isWhole = (value: unknown, min: number, max = Number.MAX_SAFE_INTEGER): value is number =>
   Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
+/**
+ * Highest id, or next id, a save may hold: far beyond any real game, and far
+ * enough below 2^53 that counting on from it never repeats an id.
+ */
+const MAX_ID = 1_000_000_000;
 /** A count of ticks: any finite number from zero up. */
 const isTicks = (value: unknown): boolean => isNumber(value) && value >= 0;
 const isNullOr = (value: unknown, check: (value: unknown) => boolean): boolean => value === null || check(value);
@@ -119,10 +125,12 @@ function isPlayableState(state: unknown, level: Level): boolean {
   if (!isWhole(state.tick, 0) || !isWhole(state.waveIndex, 1, lastWave) || !isNumber(state.waveTick)) return false;
   if (!isWhole(state.lives, 1, 10_000) || !isNumber(state.gold) || state.gold < 0) return false;
   if (!isNumber(state.score) || state.score < 0) return false;
-  if (!isWhole(state.nextEnemyId, 1) || !isWhole(state.nextTowerId, 1)) return false;
+  if (!isWhole(state.nextEnemyId, 1, MAX_ID) || !isWhole(state.nextTowerId, 1, MAX_ID)) return false;
   if (!isData(state.rng) || !isNumber(state.rng.state)) return false;
   // Between waves the road is empty.
   if (!Array.isArray(state.enemies) || state.enemies.length > 0) return false;
+  // Nobody lies on it waiting to rise either; saves from before that could happen have no list.
+  if (state.rising !== undefined && (!Array.isArray(state.rising) || state.rising.length > 0)) return false;
   if (!Array.isArray(state.spawnQueue) || state.spawnQueue.length > 0) return false;
   if (!Array.isArray(state.zones) || !state.zones.every(isZone)) return false;
   // Saves from before spots could be cleared have none cleared.
@@ -194,7 +202,7 @@ function areTowersOf(towers: unknown, level: Level, cleared: readonly number[]):
     // Never more than every level up to this one cost, so selling cannot mint gold.
     const mostInvested = levels.slice(0, tower.level + 1).reduce((sum, stats) => sum + stats.cost, 0);
     return (
-      isWhole(tower.id, 1) &&
+      isWhole(tower.id, 1, MAX_ID) &&
       isNumber(tower.invested) &&
       tower.invested >= 0 &&
       tower.invested <= mostInvested &&

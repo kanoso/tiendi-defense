@@ -25,7 +25,7 @@ const bot: Bot = {
 it('prints the cost of a simulation tick under load', () => {
   const lines = ['', '=== Simulation cost per tick, endless mode, per ten waves'];
   for (const map of MAPS) {
-    const level = asEndless(map.level);
+    const level = asEndless(map.level, map.endlessExtras);
     const game = createGame(level, 5);
     // Never lose, so the measurement reaches the crowded late waves.
     game.lives = Number.MAX_SAFE_INTEGER;

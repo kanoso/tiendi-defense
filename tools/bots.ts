@@ -62,7 +62,9 @@ export function play(level: Level, bot: Bot, seed: number): Result {
     step(game, level, decide(game, level, bot));
     if (game.lives < livesBefore) {
       for (const enemy of nearExit) {
-        if (!game.enemies.includes(enemy)) leaks[enemy.type] = (leaks[enemy.type] ?? 0) + 1;
+        // One lying on the road, waiting to rise, was killed rather than let out.
+        const lying = game.rising.some((fallen) => fallen.enemy === enemy);
+        if (!game.enemies.includes(enemy) && !lying) leaks[enemy.type] = (leaks[enemy.type] ?? 0) + 1;
       }
     }
     if (wasFighting && game.phase !== 'wave') livesByWave.push(game.lives);

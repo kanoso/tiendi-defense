@@ -71,7 +71,12 @@ export const endlessRules: EndlessRules = {
   ],
 };
 
-/** The same map played without an end. The level passed in is left untouched. */
-export function asEndless(level: Level): Level {
-  return { ...level, waves: [], endless: endlessRules };
+/**
+ * The same map played without an end. The level passed in is left untouched.
+ * `extra` are the map's own groups, if any: they come after the shared ones, so
+ * the shared ones keep the roads they take.
+ */
+export function asEndless(level: Level, extra: readonly EndlessGroup[] = []): Level {
+  const endless = extra.length === 0 ? endlessRules : { groups: [...endlessRules.groups, ...extra] };
+  return { ...level, waves: [], endless };
 }

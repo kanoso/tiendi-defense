@@ -27,6 +27,7 @@ import {
   STUN_COLOR,
 } from './styles';
 import { drawCastEffect, drawZone, type CastEffect } from './abilityEffects';
+import { drawEnemyEffect, type EnemyEffect } from './enemyEffects';
 import { headRise, UNIT_SHEETS } from './units';
 
 type Graphics = Phaser.GameObjects.Graphics;
@@ -51,6 +52,8 @@ export interface OverlayView {
   aim: Aim | null;
   /** Abilities cast a moment ago, still playing their effect. */
   castEffects: readonly CastEffect[];
+  /** Shamans' heals a moment ago, still playing. Zombies bursting are drawn by the scene, under the units. */
+  enemyEffects: readonly EnemyEffect[];
   pointer: Point;
   /** Where the middle of each enemy's body is drawn this frame, by enemy id. */
   enemyPositions: ReadonlyMap<number, Point>;
@@ -64,6 +67,10 @@ export function drawOverlay(g: Graphics, view: OverlayView): void {
   g.clear();
   drawZones(g, view);
   drawAbilityCasts(g, view);
+  // Bursts have their own layer, under the units (see `BURST_DEPTH`).
+  for (const effect of view.enemyEffects) {
+    if (effect.kind === 'healPulse') drawEnemyEffect(g, effect, view.game.tick);
+  }
   drawTargeting(g, view);
   drawTowerMarks(g, view);
   drawHeroMarks(g, view);

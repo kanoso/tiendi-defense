@@ -20,11 +20,13 @@ export interface Attack {
 
 /**
  * Takes health from an enemy. Armor absorbs part of physical damage only, less
- * of it with `armorPierce` (the fraction of the armor ignored).
+ * of it with `armorPierce` (the fraction of the armor ignored). Magic
+ * resistance absorbs part of magic damage only, and nothing pierces it.
  */
 export function dealDamage(level: Level, enemy: Enemy, amount: number, type: DamageType, armorPierce = 0): void {
-  const armor = type === 'physical' ? level.enemyTypes[enemy.type].armor * (1 - armorPierce) : 0;
-  enemy.hp -= amount * (1 - armor);
+  const enemyType = level.enemyTypes[enemy.type];
+  const resisted = type === 'physical' ? enemyType.armor * (1 - armorPierce) : (enemyType.magicResist ?? 0);
+  enemy.hp -= amount * (1 - resisted);
 }
 
 /**

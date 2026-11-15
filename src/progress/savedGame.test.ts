@@ -346,6 +346,60 @@ describe('reading a saved game that may be broken', () => {
     });
   });
 
+  it('refuses id counters pushed so high that new ids could repeat', () => {
+    for (const field of ['nextEnemyId', 'nextTowerId']) {
+      for (const value of [2 ** 53, 1_000_000_001, Number.MAX_SAFE_INTEGER]) {
+        const saved = valid();
+        saved.state[field] = value;
+        expect(parseSavedGame(saved), `${field} = ${value}`).toBeNull();
+      }
+      const saved = valid();
+      saved.state[field] = 1_000_000_000;
+      expect(parseSavedGame(saved), `${field} at the limit`).not.toBeNull();
+    }
+  });
+
+  it('refuses a tower whose id is past the limit', () => {
+    const saved = valid();
+    const level = playerLevel('meadow', 'normal', 'campaign', {});
+    saved.state.towers = [
+      {
+        id: 1_000_000_001,
+        slot: 1,
+        type: 'archery',
+        level: 0,
+        branch: null,
+        invested: level.towerTypes.archery.levels[0].cost,
+        cooldownTicks: 0,
+        lastShot: null,
+      },
+    ];
+    expect(parseSavedGame(saved)).toBeNull();
+  });
+
+  describe('enemies waiting to rise', () => {
+    it('reads a save from before enemies could rise as nobody lying on the road, leaving the save untouched', () => {
+      const raw = valid();
+      expect(raw.state.rising).toEqual([]);
+      delete raw.state.rising;
+      const untouched = structuredClone(raw);
+      expect(parseSavedGame(raw)?.state.rising).toEqual([]);
+      expect(raw).toEqual(untouched);
+    });
+
+    it('refuses a game with an enemy still lying on the road, or anything that is not a list there', () => {
+      const lying = {
+        enemy: { id: 3, type: 'skeleton', path: 0, distance: 100, hp: 0, maxHp: 200, speed: 60, blockedBy: null },
+        ticksLeft: 30,
+      };
+      for (const junk of [[lying], 'nobody', 7, null, {}]) {
+        const saved = valid();
+        saved.state.rising = junk;
+        expect(parseSavedGame(saved), JSON.stringify(junk)).toBeNull();
+      }
+    });
+  });
+
   it('refuses a game that breaks when played', () => {
     const saved = valid();
     saved.state.heroes[0].abilityCooldowns = null;
