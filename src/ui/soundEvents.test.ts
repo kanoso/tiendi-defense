@@ -52,6 +52,18 @@ describe('soundEventsSince', () => {
     expect(soundEventsSince(before, game)).toEqual(['shot']);
   });
 
+  it('hears a blocked spot being cleared like a build, without taking the spent gold for a bounty', () => {
+    game.clearedSlots = [8];
+    game.gold -= 150;
+    expect(soundEventsSince(before, game)).toEqual(['build']);
+  });
+
+  it('hears a spot cleared and a tower built on it in the same frame only once', () => {
+    game.clearedSlots = [8];
+    game.towers.push(tower(8));
+    expect(soundEventsSince(before, game)).toEqual(['build']);
+  });
+
   it('hears an ability', () => {
     game.heroes[2].lastCast = { tick: 101, x: 0, y: 0, ability: 0 };
     expect(soundEventsSince(before, game)).toEqual(['cast']);

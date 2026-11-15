@@ -111,6 +111,8 @@ export function parseCommand(raw: unknown): Command | null {
       return { type: 'specializeTower', slot: data.slot, branch: data.branch };
     case 'sellTower':
       return isIndex(data.slot) ? { type: 'sellTower', slot: data.slot } : null;
+    case 'clearSlot':
+      return isIndex(data.slot) ? { type: 'clearSlot', slot: data.slot } : null;
     default:
       return null;
   }
@@ -130,6 +132,7 @@ export function isAllowed(command: Command, ownHeroes: readonly number[]): boole
     case 'upgradeTower':
     case 'specializeTower':
     case 'sellTower':
+    case 'clearSlot':
       return true;
     case 'startWave':
       return false;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createGame, step, type Command, type GameState, type Level } from '../core/simulation';
 import { MAPS } from '../data/maps';
-import { missingGold, towerOptions } from './towerOptions';
+import { missingGold, towerOptions, towerOptionsKey } from './towerOptions';
 
 const level: Level = { ...MAPS[0].level, startingGold: 5000 };
 
@@ -47,6 +47,69 @@ describe('the options of a build slot', () => {
     step(specialized, level, [upgrade]);
     expect(labels(specialized)).toHaveLength(1);
     expect(labels(specialized)[0]).toMatch(/^Vender/);
+  });
+});
+
+describe('the options of a blocked spot', () => {
+  const spot = level.buildSlots.findIndex((slot) => slot.clearCost !== undefined);
+  const cost = level.buildSlots[spot].clearCost!;
+
+  it('offers only clearing it, with its price and what it does', () => {
+    const options = towerOptions(gameWith([]), level, spot);
+    expect(options).toHaveLength(1);
+    expect(options[0]).toMatchObject({
+      label: `Despejar  ${cost}`,
+      cost,
+      command: { type: 'clearSlot', slot: spot },
+    });
+    // A second line, so it is drawn as a big button that can say what gold is missing.
+    expect(options[0].detail).toEqual(expect.any(String));
+  });
+
+  it('offers every tower once it is cleared, like any empty slot', () => {
+    const game = gameWith([{ type: 'clearSlot', slot: spot }]);
+    expect(towerOptions(game, level, spot).map((option) => option.command.type)).toEqual([
+      'buildTower',
+      'buildTower',
+      'buildTower',
+      'buildTower',
+    ]);
+  });
+});
+
+describe('telling when an open menu is out of date', () => {
+  const spot = level.buildSlots.findIndex((slot) => slot.clearCost !== undefined);
+  const key = (game: GameState, slot: number) => towerOptionsKey(game, level, slot);
+
+  it('stays the same while nothing on the slot changes, gold included', () => {
+    const game = gameWith([build]);
+    const before = key(game, 0);
+    game.gold -= 100;
+    step(game, level, [{ type: 'buildTower', slot: 1, tower: 'cannon' }]);
+    expect(key(game, 0)).toBe(before);
+  });
+
+  it('changes when someone else builds on the empty slot', () => {
+    const game = gameWith([]);
+    const before = key(game, 0);
+    step(game, level, [build]);
+    expect(key(game, 0)).not.toBe(before);
+  });
+
+  it('changes when someone else clears the spot', () => {
+    const game = gameWith([]);
+    const before = key(game, spot);
+    step(game, level, [{ type: 'clearSlot', slot: spot }]);
+    expect(key(game, spot)).not.toBe(before);
+  });
+
+  it('changes when someone else upgrades, specializes or sells the tower', () => {
+    const game = gameWith([build]);
+    for (const command of [upgrade, upgrade, { type: 'specializeTower', slot: 0, branch: 'ballesta' }, { type: 'sellTower', slot: 0 }] as Command[]) {
+      const before = key(game, 0);
+      step(game, level, [command]);
+      expect(key(game, 0), command.type).not.toBe(before);
+    }
   });
 });
 

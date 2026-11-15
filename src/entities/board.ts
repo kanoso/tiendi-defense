@@ -89,14 +89,20 @@ function strokeRoad(
   for (const point of points) graphics.fillCircle(point.x, point.y, width / 2);
 }
 
+/** Only the slots open from the start: the blocked ones change as they are cleared, so they are drawn apart. */
 function drawBuildSlots(scene: Phaser.Scene, level: Level): void {
   const graphics = scene.add.graphics().setDepth(1);
-  for (const point of level.buildSlots) {
-    graphics.fillStyle(0x2f4a22, 0.45);
-    graphics.fillCircle(point.x, point.y, SLOT_RADIUS);
-    graphics.lineStyle(2, 0xf4f1e8, 0.75);
-    graphics.strokeCircle(point.x, point.y, SLOT_RADIUS);
-    graphics.lineBetween(point.x - 6, point.y, point.x + 6, point.y);
-    graphics.lineBetween(point.x, point.y - 6, point.x, point.y + 6);
+  for (const slot of level.buildSlots) {
+    if (slot.clearCost === undefined) drawOpenSlot(graphics, slot);
   }
+}
+
+/** The ring with a "+" that marks where a tower can go. */
+export function drawOpenSlot(graphics: Phaser.GameObjects.Graphics, point: Point): void {
+  graphics.fillStyle(0x2f4a22, 0.45);
+  graphics.fillCircle(point.x, point.y, SLOT_RADIUS);
+  graphics.lineStyle(2, 0xf4f1e8, 0.75);
+  graphics.strokeCircle(point.x, point.y, SLOT_RADIUS);
+  graphics.lineBetween(point.x - 6, point.y, point.x + 6, point.y);
+  graphics.lineBetween(point.x, point.y - 6, point.x, point.y + 6);
 }

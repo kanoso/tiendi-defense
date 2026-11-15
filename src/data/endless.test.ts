@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { waveAt } from '../core/simulation';
+import { createGame, step, waveAt } from '../core/simulation';
 import { asEndless, endlessRules } from './endless';
 import { MAPS } from './maps';
 
@@ -21,6 +21,19 @@ describe('asEndless', () => {
     expect(endless.paths).toBe(level.paths);
     expect(endless.buildSlots).toBe(level.buildSlots);
     expect(endless.enemyTypes).toBe(level.enemyTypes);
+  });
+
+  it('keeps the spots to clear, which are cleared and built on as in the campaign', () => {
+    const endless = { ...asEndless(level), startingGold: 5000 };
+    const spot = endless.buildSlots.findIndex((slot) => slot.clearCost !== undefined);
+    expect(spot).toBeGreaterThan(0);
+    const game = createGame(endless, 1);
+    step(game, endless, [
+      { type: 'clearSlot', slot: spot },
+      { type: 'buildTower', slot: spot, tower: 'archery' },
+    ]);
+    expect(game.clearedSlots).toEqual([spot]);
+    expect(game.towers).toMatchObject([{ slot: spot }]);
   });
 
   it('does not change the level it was given', () => {

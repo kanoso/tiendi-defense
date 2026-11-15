@@ -1,5 +1,6 @@
 import { isAllowed } from '../core/multiplayer';
 import type { Command, GameState } from '../core/simulation';
+import { withStateDefaults } from '../core/stateDefaults';
 import { hashState } from '../core/stateHash';
 import {
   HASH_EVERY_TURNS,
@@ -74,7 +75,8 @@ export class CoopSession {
         return;
       case 'snapshot':
         this.start = message.start;
-        this.snapshot = message.state;
+        // The server may run another version for a moment: fill in what its game lacks.
+        this.snapshot = withStateDefaults(message.state);
         // The snapshot already contains every turn up to its own.
         this.turns.clear();
         this.confirmedTurn = message.turn;

@@ -162,9 +162,22 @@ export interface TowersView {
   menu: { label: string; reason: string | null; x: number; y: number; height: number }[];
   towers: { slot: number; level: number; branch: string | null; badgeText: string | null; badgeColor: string | null }[];
   frozen: { id: number; tint: number | null }[];
+  /** The spots that start blocked by rocks, as drawn now. */
+  spots: {
+    slot: number;
+    x: number;
+    y: number;
+    cost: number;
+    rocks: boolean;
+    /** The price shown under the rocks, or null once it is gone. */
+    price: string | null;
+    priceAlpha: number;
+    /** The open slot ring, shown once the spot is cleared. */
+    ring: boolean;
+  }[];
 }
 
-/** The towers as drawn: open menu, level badges and frozen enemies (see `describeTowersForTests`). */
+/** The towers as drawn: open menu, level badges, frozen enemies and blocked spots (see `describeTowersForTests`). */
 export function towersView(page: Page): Promise<TowersView> {
   return page.evaluate(() => (window as any).__game.scene.getScene('game').describeTowersForTests());
 }

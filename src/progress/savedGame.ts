@@ -1,4 +1,5 @@
 import { step, type GameState, type Level } from '../core/simulation';
+import { withStateDefaults } from '../core/stateDefaults';
 import { applyDifficulty, DIFFICULTY_IDS, findDifficulty, type DifficultyId } from '../data/difficulty';
 import { asEndless } from '../data/endless';
 import { findMap, MAP_IDS } from '../data/maps';
@@ -105,7 +106,7 @@ export function parseSavedGame(raw: unknown): SavedGame | null {
     difficulty: difficulty as DifficultyId,
     mode,
     savedAt,
-    state: withDefaults(state as unknown as GameState),
+    state: withStateDefaults(state as unknown as GameState),
   } satisfies SavedGame;
   return playsOn(saved.state, level) ? saved : null;
 }
@@ -124,7 +125,24 @@ function isPlayableState(state: unknown, level: Level): boolean {
   if (!Array.isArray(state.enemies) || state.enemies.length > 0) return false;
   if (!Array.isArray(state.spawnQueue) || state.spawnQueue.length > 0) return false;
   if (!Array.isArray(state.zones) || !state.zones.every(isZone)) return false;
-  return areHeroesOf(state.heroes, level) && areTowersOf(state.towers, level);
+  // Saves from before spots could be cleared have none cleared.
+  const cleared = state.clearedSlots === undefined ? [] : state.clearedSlots;
+  if (!areClearedSlotsOf(cleared, level)) return false;
+  return areHeroesOf(state.heroes, level) && areTowersOf(state.towers, level, cleared as number[]);
+}
+
+/** Each a slot of the map that starts blocked, listed once. */
+function areClearedSlotsOf(cleared: unknown, level: Level): boolean {
+  if (!Array.isArray(cleared)) return false;
+  const clearable = level.buildSlots.filter((slot) => slot.clearCost !== undefined).length;
+  if (cleared.length > clearable) return false;
+  return cleared.every(
+    (slot: unknown, index) =>
+      isWhole(slot, 0, level.buildSlots.length - 1) &&
+      Object.hasOwn(level.buildSlots, slot) &&
+      level.buildSlots[slot].clearCost !== undefined &&
+      cleared.indexOf(slot) === index,
+  );
 }
 
 function areHeroesOf(heroes: unknown, level: Level): boolean {
@@ -150,7 +168,8 @@ function areHeroesOf(heroes: unknown, level: Level): boolean {
   });
 }
 
-function areTowersOf(towers: unknown, level: Level): boolean {
+/** `cleared` has already been checked: the blocked slots a tower may stand on. */
+function areTowersOf(towers: unknown, level: Level, cleared: readonly number[]): boolean {
   if (!Array.isArray(towers)) return false;
   const slots = new Set<number>();
   return towers.every((tower: unknown) => {
@@ -159,6 +178,8 @@ function areTowersOf(towers: unknown, level: Level): boolean {
     const type = level.towerTypes[tower.type];
     if (!isWhole(tower.slot, 0, level.buildSlots.length - 1) || slots.has(tower.slot)) return false;
     slots.add(tower.slot);
+    // Nothing is built where the rocks are still in the way.
+    if (level.buildSlots[tower.slot].clearCost !== undefined && !cleared.includes(tower.slot)) return false;
     // Saves from before branches existed have none: the tower has no branch.
     // A level past the base ones needs a branch, and a branch needs one of them.
     let levels = type.levels;
@@ -205,18 +226,6 @@ function isZone(zone: unknown): boolean {
     typeof zone.damageType === 'string' &&
     typeof zone.hitsFlying === 'boolean'
   );
-}
-
-/**
- * Fills in what older saves lack, on a copy: towers saved before branches
- * existed have none, and enemies saved before stuns existed are not stunned.
- */
-function withDefaults(state: GameState): GameState {
-  return {
-    ...state,
-    towers: state.towers.map((tower) => ({ ...tower, branch: tower.branch ?? null })),
-    enemies: state.enemies.map((enemy) => ({ ...enemy, stunTicks: enemy.stunTicks ?? 0 })),
-  };
 }
 
 /** Whether the game survives being played on: a last guard against anything missed above. */

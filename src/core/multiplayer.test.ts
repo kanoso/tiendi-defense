@@ -68,6 +68,7 @@ describe('isAllowed', () => {
     expect(isAllowed({ type: 'upgradeTower', slot: 0 }, mine)).toBe(true);
     expect(isAllowed({ type: 'sellTower', slot: 0 }, [])).toBe(true);
     expect(isAllowed({ type: 'specializeTower', slot: 0, branch: 'ballesta' }, [])).toBe(true);
+    expect(isAllowed({ type: 'clearSlot', slot: 9 }, [])).toBe(true);
   });
 
   it('never lets a player start the wave directly: that takes everyone being ready', () => {
@@ -88,6 +89,7 @@ describe('parseCommand', () => {
       { type: 'upgradeTower', slot: 3 },
       { type: 'specializeTower', slot: 3, branch: 'ballesta' },
       { type: 'sellTower', slot: 3 },
+      { type: 'clearSlot', slot: 9 },
     ];
     for (const order of orders) expect(wire(order), order.type).toEqual(order);
   });
@@ -109,6 +111,23 @@ describe('parseCommand', () => {
       { type: 'specializeTower', slot: -1, branch: 'rayo' },
       { type: 'specializeTower', slot: 1.5, branch: 'rayo' },
       { type: 'specializeTower', branch: 'rayo' },
+    ]) {
+      expect(parseCommand(junk), JSON.stringify(junk)).toBeNull();
+    }
+  });
+  it('keeps only the slot of an order to clear one, dropping anything extra', () => {
+    expect(wire({ type: 'clearSlot', slot: 8, gold: 99_999, cost: 0 })).toEqual({ type: 'clearSlot', slot: 8 });
+  });
+
+  it('refuses a malformed order to clear a slot', () => {
+    for (const junk of [
+      { type: 'clearSlot' },
+      { type: 'clearSlot', slot: -1 },
+      { type: 'clearSlot', slot: 1.5 },
+      { type: 'clearSlot', slot: '8' },
+      { type: 'clearSlot', slot: null },
+      { type: 'clearSlot', slot: 1000 },
+      { type: 'clearSlot', slot: Number.NaN },
     ]) {
       expect(parseCommand(junk), JSON.stringify(junk)).toBeNull();
     }

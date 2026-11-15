@@ -1,13 +1,14 @@
 import { strike } from './combat';
-import { branchCost, sellValue, towerAt, towerStats, upgradeCost } from './queries';
+import { branchCost, isSlotBlocked, sellValue, slotClearCost, towerAt, towerStats, upgradeCost } from './queries';
 import type { GameState, Level } from './types';
 
-// Requests that cannot be honoured (no gold, slot taken, unknown tower or branch) do nothing.
+// Requests that cannot be honoured (no gold, slot taken or blocked, unknown
+// tower or branch, nothing to clear) do nothing.
 
 export function buildTower(game: GameState, level: Level, slot: number, towerType: string): void {
   if (!Object.hasOwn(level.buildSlots, slot)) return;
   if (!Object.hasOwn(level.towerTypes, towerType)) return;
-  if (towerAt(game, slot)) return;
+  if (towerAt(game, slot) || isSlotBlocked(game, level, slot)) return;
   const cost = level.towerTypes[towerType].levels[0].cost;
   if (game.gold < cost) return;
   game.gold -= cost;
@@ -43,6 +44,14 @@ export function specializeTower(game: GameState, level: Level, slot: number, bra
   tower.branch = branchId;
   tower.level++;
   tower.invested += cost;
+}
+
+/** Pays for the rocks on a blocked slot to go. Selling a tower there later never brings them back. */
+export function clearSlot(game: GameState, level: Level, slot: number): void {
+  const cost = slotClearCost(game, level, slot);
+  if (cost === null || game.gold < cost) return;
+  game.gold -= cost;
+  game.clearedSlots = [...game.clearedSlots, slot].sort((a, b) => a - b);
 }
 
 export function sellTower(game: GameState, level: Level, slot: number): void {

@@ -51,6 +51,11 @@ const meadow: GameMap = {
       { x: 650, y: 100 },
       { x: 700, y: 300 },
       { x: 860, y: 370 },
+      // Blocked by rocks until the player pays to clear them.
+      { x: 180, y: 330, clearCost: 150 },
+      { x: 450, y: 240, clearCost: 200 },
+      { x: 860, y: 250, clearCost: 250 },
+      { x: 690, y: 390, clearCost: 300 },
     ],
   },
 };
@@ -92,6 +97,11 @@ const canyon: GameMap = {
       { x: 260, y: 330 },
       { x: 90, y: 330 },
       { x: 780, y: 380 },
+      // Blocked by rocks until the player pays to clear them.
+      { x: 110, y: 200, clearCost: 150 },
+      { x: 400, y: 375, clearCost: 200 },
+      { x: 640, y: 370, clearCost: 250 },
+      { x: 240, y: 260, clearCost: 300 },
     ],
   },
 };
@@ -138,6 +148,11 @@ const crossroads: GameMap = {
       { x: 480, y: 400 },
       { x: 720, y: 250 },
       { x: 900, y: 300 },
+      // Blocked by rocks until the player pays to clear them.
+      { x: 90, y: 220, clearCost: 150 },
+      { x: 255, y: 262, clearCost: 200 },
+      { x: 700, y: 100, clearCost: 250 },
+      { x: 880, y: 220, clearCost: 300 },
     ],
   },
 };

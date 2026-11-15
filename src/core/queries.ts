@@ -75,6 +75,19 @@ export function canUseAbility(game: GameState, level: Level, hero: Hero, index: 
   );
 }
 
+/** Whether rocks still keep anything from being built on that slot. False for a slot the map lacks. */
+export function isSlotBlocked(game: GameState, level: Level, slot: number): boolean {
+  return slotClearCost(game, level, slot) !== null;
+}
+
+/** Gold it takes to clear that slot now, or null when there is nothing to clear on it. */
+export function slotClearCost(game: GameState, level: Level, slot: number): number | null {
+  if (!Object.hasOwn(level.buildSlots, slot)) return null;
+  const cost = level.buildSlots[slot].clearCost;
+  if (cost === undefined || game.clearedSlots.includes(slot)) return null;
+  return cost;
+}
+
 export function towerAt(game: GameState, slot: number): Tower | undefined {
   return game.towers.find((tower) => tower.slot === slot);
 }

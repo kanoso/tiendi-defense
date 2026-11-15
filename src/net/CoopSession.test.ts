@@ -193,6 +193,28 @@ describe('staying in step', () => {
     expect(session.canStep(30)).toBe(true);
   });
 
+  it('fills in what a snapshot from a server of an older version lacks, without failing', () => {
+    const level = coopLevel(START.mapId, START.difficulty, START.playerCount);
+    const old = createGame(level, START.seed) as Partial<GameState>;
+    old.towers = [{ id: 1, slot: 1, type: 'archery', level: 0, invested: 70, cooldownTicks: 0, lastShot: null } as never];
+    delete old.clearedSlots;
+    session.receive({ t: 'snapshot', turn: 9, start: START, state: old as GameState });
+    const adopted = session.takeSnapshot()!;
+    expect(adopted.clearedSlots).toEqual([]);
+    expect(adopted.towers[0].branch).toBeNull();
+    expect(() => hashState(adopted)).not.toThrow();
+    expect(() => step(adopted, level, [{ type: 'clearSlot', slot: 8 }])).not.toThrow();
+  });
+
+  it('keeps what a current snapshot already has', () => {
+    const level = coopLevel(START.mapId, START.difficulty, START.playerCount);
+    const reference = createGame(level, START.seed);
+    reference.gold = 5000;
+    step(reference, level, [{ type: 'clearSlot', slot: 9 }, { type: 'buildTower', slot: 9, tower: 'archery' }]);
+    session.receive({ t: 'snapshot', turn: 9, start: START, state: structuredClone(reference) });
+    expect(session.takeSnapshot()).toEqual(reference);
+  });
+
   it('drops the turns a snapshot already includes', () => {
     const build: Command = { type: 'buildTower', slot: 1, tower: 'archery' };
     for (let i = 0; i < 5; i++) turn(i, i === 3 ? [build] : []);

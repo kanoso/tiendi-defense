@@ -132,6 +132,15 @@ export interface TowerType {
   branches?: readonly TowerBranch[];
 }
 
+/** A place where a tower may be built. */
+export interface BuildSlot extends Point {
+  /**
+   * Gold to clear the rocks that block it before anything can be built there.
+   * Missing for a slot that is open from the start.
+   */
+  clearCost?: number;
+}
+
 export interface HeroSpawn {
   type: string;
   x: number;
@@ -167,8 +176,11 @@ export interface Level {
   /** Extra health and damage per level above the first, as a fraction. */
   levelBonus: number;
   towerTypes: Readonly<Record<string, TowerType>>;
-  /** Places where a tower may be built. A slot is identified by its index. */
-  buildSlots: readonly Point[];
+  /**
+   * Places where a tower may be built. A slot is identified by its index, so
+   * new ones only ever go at the end: saved games and bots refer to the others.
+   */
+  buildSlots: readonly BuildSlot[];
   /** Fraction of the gold invested in a tower that selling it gives back. */
   sellRefund: number;
 }
@@ -285,6 +297,8 @@ export interface GameState {
   heroes: Hero[];
   nextTowerId: number;
   towers: Tower[];
+  /** Slots that started blocked and were cleared, by index, in increasing order. */
+  clearedSlots: number[];
   zones: Zone[];
   lives: number;
   gold: number;
@@ -309,4 +323,6 @@ export type Command =
   | { type: 'upgradeTower'; slot: number }
   /** Takes a tower at its last base level into one of its branches. */
   | { type: 'specializeTower'; slot: number; branch: string }
-  | { type: 'sellTower'; slot: number };
+  | { type: 'sellTower'; slot: number }
+  /** Pays to clear a blocked slot, which stays open for the rest of the game. */
+  | { type: 'clearSlot'; slot: number };

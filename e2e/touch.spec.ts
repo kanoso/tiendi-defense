@@ -238,6 +238,36 @@ test('a tower is specialized and upgraded within its branch with taps alone', as
   expect((await snapshot(page)).gold).toBe(gold - rain.costs[0] - rain.costs[1]);
 });
 
+test('a blocked spot is cleared and built on with taps alone', async ({ page }) => {
+  const SLOW = { timeout: 20_000 };
+  const spots = async () => (await towersView(page)).spots;
+  const [, , third] = await spots();
+  const archery = await page.evaluate(
+    () => (window as any).__game.scene.getScene('game').level.towerTypes.archery.levels[0].cost as number,
+  );
+  await giveGold(page, third.cost + archery);
+
+  await tap(page, third);
+  await expect.poll(async () => (await snapshot(page)).menu, SLOW).toEqual([`Despejar  ${third.cost}`]);
+  // A big button, easy to hit with a finger: over 40 px tall on this small screen.
+  const [entry] = (await towersView(page)).menu;
+  const box = (await page.locator('canvas').boundingBox())!;
+  expect((entry.height * box.height) / MAP_HEIGHT).toBeGreaterThan(40);
+
+  await tap(page, await menuOption(page, 'Despejar'));
+  await expect
+    .poll(async () => (await spots()).find((spot) => spot.slot === third.slot), SLOW)
+    .toMatchObject({ rocks: false, price: null, ring: true });
+  expect((await snapshot(page)).gold).toBe(archery);
+
+  await expect.poll(async () => (await snapshot(page)).menu.length, SLOW).toBe(0);
+  await tap(page, third);
+  await expect.poll(async () => (await snapshot(page)).menu.length, SLOW).toBeGreaterThan(0);
+  await tap(page, await menuOption(page, 'Arquería'));
+  await expect.poll(async () => (await towerOn(page, third.slot))?.type, SLOW).toBe('archery');
+  expect((await snapshot(page)).gold).toBe(0);
+});
+
 test('a map is picked from the menu with a tap', async ({ page }) => {
   await page.goto('/');
   await expect.poll(() => isShowing(page, 'menu')).toBe(true);

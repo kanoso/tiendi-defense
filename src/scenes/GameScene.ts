@@ -28,6 +28,7 @@ import type { SignalKind } from '../net/protocol';
 import { SIGNAL_STYLE, SignalMarks } from '../entities/signalMarks';
 import type { GameMode } from '../data/modes';
 import { CAST_EFFECT_TICKS, type CastEffect } from '../entities/abilityEffects';
+import { BlockedSpots } from '../entities/blockedSpots';
 import { drawBoard } from '../entities/board';
 import { blockedOffsets } from '../entities/crowd';
 import { drawOverlay, type Aim } from '../entities/overlay';
@@ -214,6 +215,8 @@ export class GameScene extends Phaser.Scene {
   private enemyPositions = new Map<number, Point>();
   private heroViews = new Map<number, HeroView>();
   private towerViews = new Map<number, TowerView>();
+  /** The spots still blocked by rocks, and those cleared. Also read by the browser tests. */
+  private blockedSpots!: BlockedSpots;
   /** Killed enemies still falling, drawn only. Also read by the browser tests. */
   private remains: Remains[] = [];
   /** Images reused to draw `remains`, one per body; never more than the list can hold. */
@@ -368,6 +371,7 @@ export class GameScene extends Phaser.Scene {
     this.endlessRecorded = false;
 
     drawBoard(this, this.level);
+    this.blockedSpots = new BlockedSpots(this, this.level);
     this.createHeroViews();
     this.overlay = this.add.graphics().setDepth(4);
     this.createInterface();
@@ -393,6 +397,7 @@ export class GameScene extends Phaser.Scene {
     this.syncRemains();
     this.syncHeroes();
     this.syncTowers();
+    this.blockedSpots.sync(this.game_);
     drawOverlay(this.overlay, {
       game: this.game_,
       level: this.level,
@@ -1146,7 +1151,8 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * The towers as drawn, for the browser tests: the open menu, each tower's
-   * level badge, and the frozen enemies with their tint. Reads only.
+   * level badge, the frozen enemies with their tint, and the spots blocked by
+   * rocks or cleared. Reads only.
    */
   describeTowersForTests() {
     return {
@@ -1162,6 +1168,7 @@ export class GameScene extends Phaser.Scene {
         };
       }),
       frozen: [...this.frozenEnemies].map((id) => ({ id, tint: this.enemyViews.get(id)?.sprite.tintTopLeft ?? null })),
+      spots: this.blockedSpots.describeForTests(),
     };
   }
 
@@ -1490,7 +1497,7 @@ export class GameScene extends Phaser.Scene {
       this.aim,
       session && { own: session.ownHeroes(), nameOf: (heroId) => session.ownerName(heroId) },
     );
-    this.towerMenu.sync(game.gold);
+    this.towerMenu.sync(game);
   }
 }
 

@@ -10,7 +10,7 @@ import { play, type Bot } from './bots';
 // Not a test: a report. Run with `npm run balance` after changing balance values
 // to see how far scripted players get on every map. Nothing here can fail the build.
 
-// Every map has eight build slots, so the same build orders work on all of them.
+// Every map has eight open build slots, so the same build orders work on all of them.
 const BASIC_TOWERS = [
   { slot: 1, tower: 'archery' },
   { slot: 2, tower: 'archery' },
@@ -33,18 +33,28 @@ const MIXED_TOWERS = [
   { slot: 7, tower: 'archery' },
 ];
 
+// Every map also has four blocked spots after those, slots 8 to 11, cheapest first.
+const EXTRA_SPOTS = [
+  { slot: 8, tower: 'archery' },
+  { slot: 9, tower: 'cannon' },
+  { slot: 10, tower: 'archery' },
+  { slot: 11, tower: 'arcane' },
+];
+
 const BOTS: Bot[] = [
   { name: 'does nothing', build: [], usesAbilities: false },
   { name: 'abilities only', build: [], usesAbilities: true },
   { name: 'basic towers only', build: BASIC_TOWERS, usesAbilities: false },
   { name: 'basic towers + abilities', build: BASIC_TOWERS, usesAbilities: true },
   { name: 'mixed towers + abilities', build: MIXED_TOWERS, usesAbilities: true },
-  // The same, spending the gold left over on specializations.
+  // The same, spending the gold left over on clearing the four blocked spots
+  // and building on them, then on specializations.
   {
     name: 'mixed + branches + abilities',
     build: MIXED_TOWERS,
     usesAbilities: true,
     branches: { archery: 'lluvia', cannon: 'bombarda', ice: 'escarcha', arcane: 'rayo' },
+    extraSpots: EXTRA_SPOTS,
   },
 ];
 

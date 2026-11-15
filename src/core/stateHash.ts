@@ -76,6 +76,8 @@ export function hashState(game: GameState): number {
     hash.numbers(tower.id, tower.slot, tower.level, tower.invested, tower.cooldownTicks);
   }
 
+  hash.numbers(game.clearedSlots.length, ...game.clearedSlots);
+
   hash.numbers(game.zones.length);
   for (const zone of game.zones) {
     hash.numbers(

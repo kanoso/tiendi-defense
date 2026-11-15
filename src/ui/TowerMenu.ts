@@ -1,13 +1,16 @@
 import Phaser from 'phaser';
 import type { Command, GameState, Level } from '../core/simulation';
 import { FONT } from '../entities/styles';
-import { missingGold, towerOptions, type TowerOption } from './towerOptions';
+import { missingGold, towerOptions, towerOptionsKey, type TowerOption } from './towerOptions';
 
 const MENU_WIDTH = 150;
-/** Wider when it offers branches, so their line about what they do fits. */
+/** Wider when it offers big rows (branches, clearing a spot), so their line about what they do fits. */
 const BRANCH_MENU_WIDTH = 236;
 const ROW_HEIGHT = 34;
-/** A branch is a big button, easy to hit with a finger: name and price, what it does, and why it is out of reach. */
+/**
+ * A branch, or clearing a blocked spot, is a big button, easy to hit with a
+ * finger: name and price, what it does, and why it is out of reach.
+ */
 const BRANCH_ROW_HEIGHT = 66;
 const BACKGROUND = '#22281d';
 const BRANCH_BACKGROUND = '#2d3526';
@@ -16,18 +19,20 @@ interface Entry {
   text: Phaser.GameObjects.Text;
   /** Gold the option needs. Zero when it costs nothing. */
   cost: number;
-  /** Only branches have these: what it does, and what is missing to take it. */
+  /** Only big rows have these: what it does, and what is missing to take it. */
   detail: Phaser.GameObjects.Text | null;
   reason: Phaser.GameObjects.Text | null;
 }
 
-/** The options for one build slot: build on an empty one, upgrade, specialize or sell a tower. */
+/** The options for one build slot: clear a blocked one, build on an empty one, upgrade, specialize or sell a tower. */
 export class TowerMenu {
   /** Slot the menu is open for, or null when it is closed. */
   slot: number | null = null;
   private entries: Entry[] = [];
   private backing: Phaser.GameObjects.Rectangle | null = null;
   private gold = 0;
+  /** What the slot offered when the menu was drawn, to notice it changing under the player. */
+  private key = '';
 
   constructor(
     private scene: Phaser.Scene,
@@ -38,6 +43,7 @@ export class TowerMenu {
   open(game: GameState, slot: number): void {
     this.close();
     this.slot = slot;
+    this.key = towerOptionsKey(game, this.level, slot);
 
     const options = towerOptions(game, this.level, slot);
     const hasBranches = options.some((option) => option.detail !== null);
@@ -87,10 +93,10 @@ export class TowerMenu {
       y += rowHeight;
       return { text, cost: option.cost, detail, reason };
     });
-    this.sync(game.gold);
+    this.sync(game);
   }
 
-  /** A branch the player cannot afford stays shut; it already says why. */
+  /** A big row the player cannot afford stays shut; it already says why. */
   private choose(option: TowerOption): void {
     if (option.detail !== null && missingGold(option.cost, this.gold) !== null) return;
     this.onCommand(option.command);
@@ -118,8 +124,18 @@ export class TowerMenu {
     });
   }
 
-  /** Dims the options the player cannot afford yet; branches also say how much is missing. */
-  sync(gold: number): void {
+  /**
+   * Dims the options the player cannot afford yet; big rows also say how much
+   * is missing. In a shared game someone else may build, clear or sell on the
+   * slot meanwhile: then the menu is drawn again, so it never offers what would
+   * do nothing.
+   */
+  sync(game: GameState): void {
+    if (this.slot !== null && towerOptionsKey(game, this.level, this.slot) !== this.key) {
+      this.open(game, this.slot);
+      return;
+    }
+    const gold = game.gold;
     this.gold = gold;
     for (const entry of this.entries) {
       const alpha = gold >= entry.cost ? 1 : 0.45;

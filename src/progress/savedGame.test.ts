@@ -242,6 +242,110 @@ describe('reading a saved game that may be broken', () => {
     });
   });
 
+  describe('cleared build spots', () => {
+    const level = playerLevel('meadow', 'normal', 'campaign', {});
+    const blocked = level.buildSlots.flatMap((slot, index) => (slot.clearCost === undefined ? [] : [index]));
+    const open = level.buildSlots.findIndex((slot) => slot.clearCost === undefined);
+    const withCleared = (clearedSlots: unknown) => {
+      const saved = valid();
+      saved.state.clearedSlots = clearedSlots;
+      return saved;
+    };
+    const archeryOn = (slot: number) => ({
+      id: 1,
+      slot,
+      type: 'archery',
+      level: 0,
+      branch: null,
+      invested: level.towerTypes.archery.levels[0].cost,
+      cooldownTicks: 0,
+      lastShot: null,
+    });
+
+    it('keeps the spots that were cleared', () => {
+      const parsed = parseSavedGame(withCleared([blocked[0], blocked[2]]));
+      expect(parsed?.state.clearedSlots).toEqual([blocked[0], blocked[2]]);
+    });
+
+    it('reads a save from before spots could be cleared as nothing cleared, leaving the save untouched', () => {
+      const raw = valid();
+      delete raw.state.clearedSlots;
+      const untouched = structuredClone(raw);
+      expect(parseSavedGame(raw)?.state.clearedSlots).toEqual([]);
+      expect(raw).toEqual(untouched);
+    });
+
+    it('puts the cleared spots in order, on a copy', () => {
+      const raw = withCleared([blocked[3], blocked[1]]);
+      const untouched = structuredClone(raw);
+      expect(parseSavedGame(raw)?.state.clearedSlots).toEqual([blocked[1], blocked[3]]);
+      expect(raw).toEqual(untouched);
+    });
+
+    it('refuses anything that is not a list of spots that can be cleared, each once', () => {
+      for (const junk of [
+        null,
+        'all',
+        42,
+        { 0: blocked[0] },
+        [open],
+        [blocked[0], blocked[0]],
+        [level.buildSlots.length],
+        [999],
+        [-1],
+        [blocked[0] + 0.5],
+        [String(blocked[0])],
+        [null],
+        [Number.NaN],
+        [[blocked[0]]],
+        [...blocked, blocked[0]],
+        Array.from({ length: 1000 }, () => blocked[0]),
+      ]) {
+        expect(parseSavedGame(withCleared(junk)), JSON.stringify(junk)?.slice(0, 40)).toBeNull();
+      }
+    });
+
+    it('refuses, without failing, names that are built into every object', () => {
+      for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'length']) {
+        const saved = withCleared([name]);
+        expect(() => parseSavedGame(saved), name).not.toThrow();
+        expect(parseSavedGame(saved), name).toBeNull();
+      }
+    });
+
+    it('refuses a tower standing on a spot that is still blocked', () => {
+      const saved = withCleared([]);
+      saved.state.towers = [archeryOn(blocked[0])];
+      saved.state.nextTowerId = 2;
+      expect(parseSavedGame(saved)).toBeNull();
+    });
+
+    it('keeps a tower standing on a spot that was cleared', () => {
+      const saved = withCleared([blocked[0]]);
+      saved.state.towers = [archeryOn(blocked[0])];
+      saved.state.nextTowerId = 2;
+      expect(parseSavedGame(saved)?.state.towers).toMatchObject([{ slot: blocked[0] }]);
+    });
+
+    it('plays cleared spots on exactly like the game it came from', () => {
+      const { saved } = afterFirstWave();
+      const game = structuredClone(saved.state);
+      game.gold = 5000;
+      step(game, level, [
+        { type: 'clearSlot', slot: blocked[1] },
+        { type: 'buildTower', slot: blocked[1], tower: 'cannon' },
+        { type: 'clearSlot', slot: blocked[0] },
+      ]);
+      const resumed = parseSavedGame(roundTrip({ ...saved, state: game }))!.state;
+      expect(resumed.clearedSlots).toEqual([blocked[0], blocked[1]]);
+      for (const copy of [game, resumed]) {
+        step(copy, level, [{ type: 'startWave' }]);
+        for (let tick = 0; tick < 600; tick++) step(copy, level);
+      }
+      expect(resumed).toEqual(game);
+    });
+  });
+
   it('refuses a game that breaks when played', () => {
     const saved = valid();
     saved.state.heroes[0].abilityCooldowns = null;

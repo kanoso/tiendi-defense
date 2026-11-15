@@ -48,6 +48,7 @@ export function createGame(level: Level, seed: number): GameState {
     })),
     nextTowerId: 1,
     towers: [],
+    clearedSlots: [],
     zones: [],
     lives: level.startingLives,
     gold: level.startingGold,

@@ -5,6 +5,7 @@ import {
   distanceToExit,
   enemyPosition,
   isOver,
+  slotClearCost,
   step,
   towerAt,
   upgradeCost,
@@ -23,6 +24,11 @@ export interface Bot {
   usesAbilities: boolean;
   /** The branch each tower type takes once nothing cheaper is left to buy. Missing for none. */
   branches?: Readonly<Record<string, string>>;
+  /**
+   * Blocked spots to clear and build on, in order, with gold left over once
+   * the build order is done and no upgrade or branch is affordable. Missing for none.
+   */
+  extraSpots?: readonly { slot: number; tower: string }[];
 }
 
 export interface Result {
@@ -90,14 +96,9 @@ export function decide(game: GameState, level: Level, bot: Bot): Command[] {
     });
     if (affordable) {
       commands.push({ type: 'upgradeTower', slot: affordable.slot });
-    } else if (bot.branches) {
-      // Spare gold with every plain upgrade bought: specialize a tower at its last base level.
-      const branches = bot.branches;
-      const ready = game.towers.find((tower) => {
-        const cost = Object.hasOwn(branches, tower.type) ? branchCost(level, tower, branches[tower.type]) : null;
-        return cost !== null && game.gold >= cost;
-      });
-      if (ready) commands.push({ type: 'specializeTower', slot: ready.slot, branch: branches[ready.type] });
+    } else {
+      const spend = affordableBranch(game, level, bot) ?? affordableSpot(game, level, bot);
+      if (spend) commands.push(spend);
     }
   }
 
@@ -128,4 +129,25 @@ export function decide(game: GameState, level: Level, bot: Bot): Command[] {
     }
   }
   return commands;
+}
+
+/** Spare gold with every plain upgrade bought: specialize a tower at its last base level. */
+function affordableBranch(game: GameState, level: Level, bot: Bot): Command | null {
+  const branches = bot.branches;
+  if (!branches) return null;
+  const ready = game.towers.find((tower) => {
+    const cost = Object.hasOwn(branches, tower.type) ? branchCost(level, tower, branches[tower.type]) : null;
+    return cost !== null && game.gold >= cost;
+  });
+  return ready ? { type: 'specializeTower', slot: ready.slot, branch: branches[ready.type] } : null;
+}
+
+/** Spare gold that no branch can take: clear the next blocked spot, then build on it. */
+function affordableSpot(game: GameState, level: Level, bot: Bot): Command | null {
+  const next = bot.extraSpots?.find((plan) => !towerAt(game, plan.slot));
+  if (!next) return null;
+  const clearCost = slotClearCost(game, level, next.slot);
+  if (clearCost !== null) return game.gold >= clearCost ? { type: 'clearSlot', slot: next.slot } : null;
+  const buildCost = level.towerTypes[next.tower].levels[0].cost;
+  return game.gold >= buildCost ? { type: 'buildTower', slot: next.slot, tower: next.tower } : null;
 }

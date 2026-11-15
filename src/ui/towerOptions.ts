@@ -1,6 +1,7 @@
 import {
   branchCost,
   sellValue,
+  slotClearCost,
   towerAt,
   upgradeCost,
   type Command,
@@ -21,10 +22,22 @@ export interface TowerOption {
 }
 
 /**
- * Build on an empty slot; upgrade or sell a tower. At its last base level a
- * tower offers its branches instead of an upgrade.
+ * Clear a blocked spot; build on an empty slot; upgrade or sell a tower. At its
+ * last base level a tower offers its branches instead of an upgrade.
  */
 export function towerOptions(game: GameState, level: Level, slot: number): TowerOption[] {
+  const clearCost = slotClearCost(game, level, slot);
+  if (clearCost !== null) {
+    return [
+      {
+        label: `Despejar  ${clearCost}`,
+        detail: 'Quita las rocas para construir aquí.',
+        cost: clearCost,
+        command: { type: 'clearSlot', slot },
+      },
+    ];
+  }
+
   const tower = towerAt(game, slot);
   if (!tower) {
     return Object.entries(level.towerTypes).map(([id, type]) => {
@@ -55,6 +68,15 @@ export function towerOptions(game: GameState, level: Level, slot: number): Tower
     command: { type: 'sellTower', slot },
   });
   return options;
+}
+
+/**
+ * What the menu of a slot offers, in a form easy to compare. It changes when
+ * anything on the slot does (someone else built, cleared, upgraded or sold),
+ * never with the gold alone, so an open menu knows when it has to be redrawn.
+ */
+export function towerOptionsKey(game: GameState, level: Level, slot: number): string {
+  return JSON.stringify(towerOptions(game, level, slot).map((option) => [option.label, option.command]));
 }
 
 /** Why an option is out of reach, or null when the gold is there. */

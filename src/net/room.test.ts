@@ -198,6 +198,27 @@ describe('turns', () => {
     expect(room.game?.towers[0]).toMatchObject({ level: 3, branch: 'lluvia' });
   });
 
+  it('passes on clearing a blocked spot and plays it on its own game, from any player', () => {
+    const { room, ids } = started('Ana', 'Beto');
+    const level = coopLevel('meadow', 'normal', 2);
+    const spot = level.buildSlots.findIndex((slot) => slot.clearCost !== undefined);
+    const cost = level.buildSlots[spot].clearCost!;
+    const build = level.towerTypes.archery.levels[0].cost;
+    room.game!.gold = cost + build;
+    const orders: Command[] = [
+      { type: 'clearSlot', slot: spot },
+      { type: 'buildTower', slot: spot, tower: 'archery' },
+    ];
+    // Beto clears the spot that Ana builds on: towers and gold are shared.
+    room.submit(ids[1], orders[0]);
+    room.submit(ids[0], orders[1]);
+    room.tick();
+    expect(last(room, ids[0], 'turn')?.commands).toEqual(orders);
+    expect(room.game?.clearedSlots).toEqual([spot]);
+    expect(room.game?.towers).toMatchObject([{ slot: spot, type: 'archery' }]);
+    expect(room.game?.gold).toBe(0);
+  });
+
   it('sends each order once', () => {
     const { room, ids } = started('Ana');
     room.submit(ids[0], { type: 'buildTower', slot: 1, tower: 'archery' });

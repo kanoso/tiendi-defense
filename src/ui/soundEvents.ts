@@ -24,6 +24,7 @@ export interface Heard {
   gold: number;
   towerCount: number;
   towerLevels: number;
+  clearedSlots: number;
   heroLevels: number;
   fallenHeroes: number;
 }
@@ -36,6 +37,7 @@ export function listen(game: GameState): Heard {
     gold: game.gold,
     towerCount: game.towers.length,
     towerLevels: game.towers.reduce((sum, tower) => sum + tower.level, 0),
+    clearedSlots: game.clearedSlots.length,
     heroLevels: game.heroes.reduce((sum, hero) => sum + hero.level, 0),
     fallenHeroes: game.heroes.filter((hero) => !isAlive(hero)).length,
   };
@@ -64,7 +66,8 @@ export function soundEventsSince(before: Heard, game: GameState): SoundEvent[] {
   if (now.gold > before.gold && !towersChanged) events.push('kill');
   if (now.lives < before.lives) events.push('lifeLost');
 
-  if (now.towerCount > before.towerCount) events.push('build');
+  // Clearing a blocked spot sounds like building on it.
+  if (now.towerCount > before.towerCount || now.clearedSlots > before.clearedSlots) events.push('build');
   else if (now.towerCount < before.towerCount) events.push('sell');
   else if (now.towerLevels > before.towerLevels) events.push('upgrade');
 

@@ -1,6 +1,6 @@
 # Tower Defense Heroes — Definición y alcance
 
-Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11-13
+Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11-14
 
 ## 0. Avance
 
@@ -14,7 +14,7 @@ Estado: en desarrollo · Definido: 2026-11-11 · Última actualización: 2026-11
 | 5 — Cooperativo en línea | Hecha | Hecho: servidor propio (Node, un contenedor Docker que también sirve el juego), sala de espera con código de 4 letras, elección de héroes (cada uno elige hasta su parte; los que nadie elige se reparten al empezar), oro y vidas compartidos, oleada que empieza cuando todos están listos, vida de los enemigos +10 % por jugador adicional reconexión automática a la misma partida si se corta la conexión o se recarga la página, y señales rápidas sobre el mapa («¡Ayuda!» y «Voy yo», con botones o con las teclas H y V). Publicado en internet mediante un túnel de Cloudflare hacia el contenedor; las pruebas de dos jugadores pasan a través de él. Las pruebas de navegador, cooperativo incluido, corren en cada publicación. El sitio público (GitHub Pages) también ofrece el cooperativo: se publica apuntando al servidor en https://defender.tiendi.pe. Las pruebas automáticas son de 2 jugadores; falta una partida completa de 4 jugadores en redes distintas, que es el criterio de cierre. |
 | Extra — Avance en el servidor | Hecho | Entrar con Google (token verificado en el servidor; se guarda solo un hash del identificador) o código de jugador sin datos personales: guarda estrellas, rangos y récords en el servidor y une el avance de varios dispositivos (lo mejor de cada uno; los rangos solo si las estrellas alcanzan). |
 | Extra — Continuar partida | Hecho | La partida se guarda al terminar cada oleada, en el dispositivo y en la cuenta; el menú ofrece «Continuar» con la más reciente. Validada antes de cargarse (en el juego y en el servidor). No aplica al cooperativo. |
-| Extra — Más contenido | En curso | Especializaciones de torres: al llegar al nivel 3, cada torre elige una de dos ramas con sus propios niveles 4 y 5 (Arquería: Ballesta o Lluvia de flechas; Cañón: Mortero o Bombarda; Hielo: Ventisca o Escarcha; Arcana: Rayo o Desintegrar). Especializar todas las torres cuesta más de lo que rinde una campaña, así que hay que elegir. Funciona en cooperativo y en las partidas guardadas; los precios se ajustarán con `npm run balance`. |
+| Extra — Más contenido | En curso | Especializaciones de torres: al llegar al nivel 3, cada torre elige una de dos ramas con sus propios niveles 4 y 5 (Arquería: Ballesta o Lluvia de flechas; Cañón: Mortero o Bombarda; Hielo: Ventisca o Escarcha; Arcana: Rayo o Desintegrar). Especializar todas las torres cuesta más de lo que rinde una campaña, así que hay que elegir. Funciona en cooperativo y en las partidas guardadas; los precios se ajustarán con `npm run balance`. Espacios de construcción adicionales: cada mapa tiene 4 espacios más, bloqueados por rocas, que se despejan pagando oro (150, 200, 250 y 300) y desde entonces funcionan como cualquier otro; vender la torre no los vuelve a bloquear. También en modo sin fin, en cooperativo (cualquier jugador puede despejar) y en las partidas guardadas (las anteriores se cargan sin espacios despejados). |
 
 **Diferencias con lo planeado en la fase 2**
 
