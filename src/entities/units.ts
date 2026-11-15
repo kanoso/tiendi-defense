@@ -122,6 +122,23 @@ export function headRise(sheet: UnitSheet, scale: number): number {
   return sheet.bodyRows * scale - FOOT_DROP;
 }
 
+// Units are drawn by where their feet are: the one lower on the screen is in
+// front. Flyers hover above all of them. Everything stays between the towers
+// (depth 2) and the hero numbers (3), under the marks drawn over the map (4).
+const GROUND_DEPTH = { min: 2.1, max: 2.5 };
+const FLYING_DEPTH = { min: 2.6, max: 2.9 };
+
+/**
+ * The depth to draw a unit whose feet are at `feetY`, on a map `mapHeight` tall.
+ * Rounded to the pixel: every change of depth makes Phaser sort the whole
+ * scene, so a unit drifting within a pixel must keep the same one.
+ */
+export function unitDepth(feetY: number, flying: boolean, mapHeight: number): number {
+  const band = flying ? FLYING_DEPTH : GROUND_DEPTH;
+  const down = Math.min(1, Math.max(0, Math.round(feetY) / mapHeight));
+  return band.min + (band.max - band.min) * down;
+}
+
 /** How far above its map point the middle of a unit's body is drawn. */
 export function bodyCenterRise(sheet: UnitSheet, scale: number): number {
   return (sheet.bodyRows * scale) / 2 - FOOT_DROP;

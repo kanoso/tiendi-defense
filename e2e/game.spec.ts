@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { HERO_SCALE } from '../src/entities/styles';
+import { DEATH_TICKS } from '../src/entities/unitMotion';
 import { headRise, HIT_FLASH_TICKS, HIT_FRAME, UNIT_SHEETS } from '../src/entities/units';
 import {
   clickMap,
@@ -159,6 +160,110 @@ test('a hero that loses health flashes its hit frame, then goes back to its loop
   await page.keyboard.press('P');
   await expect.poll(warriorFrame, { timeout: 30_000 }).not.toBe(String(HIT_FRAME));
   expect((await snapshot(page)).tick - hitTick).toBeGreaterThanOrEqual(HIT_FLASH_TICKS);
+});
+
+/** How the units are drawn now, as the scene describes it for tests. */
+type DrawnUnits = {
+  tick: number;
+  units: { kind: 'hero' | 'enemy'; id: number; y: number; depth: number; flying: boolean }[];
+  bodies: { id: number; startTick: number; alpha: number; angle: number; visible: boolean; interactive: boolean }[];
+  lowestMarkDepth: number;
+};
+
+function drawnUnits(page: Page): Promise<DrawnUnits> {
+  return page.evaluate(() => (window as any).__game.scene.getScene('game').describeUnitsForTests());
+}
+
+/** Whether the body of that enemy is still on the map. */
+async function hasRemains(page: Page, enemyId: number): Promise<boolean> {
+  return (await drawnUnits(page)).bodies.some((body) => body.id === enemyId);
+}
+
+test('a killed enemy falls and fades for a set number of game ticks, and holds still while paused', async ({
+  page,
+}) => {
+  await page.keyboard.press('Space');
+  // Generous: a slow machine runs the game slower, and enemies come in game time.
+  await expect.poll(async () => (await snapshot(page)).enemies, { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
+
+  // Test setup only: the first enemy is killed, and the game is paused the very
+  // frame its body appears, from inside the page so no frame goes by unseen.
+  const enemyId = await page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        const scene = (window as any).__game.scene.getScene('game');
+        const enemy = scene.game_.enemies[0];
+        enemy.hp = 0;
+        const watch = () => {
+          const bodies = scene.describeUnitsForTests().bodies;
+          if (!bodies.some((body: any) => body.id === enemy.id)) return requestAnimationFrame(watch);
+          scene.togglePause();
+          resolve(enemy.id);
+        };
+        watch();
+      }),
+  );
+  const look = async () => {
+    const drawn = await drawnUnits(page);
+    return { tick: drawn.tick, body: drawn.bodies.find((body) => body.id === enemyId)! };
+  };
+
+  const paused = await look();
+  expect(paused.body.visible).toBe(true);
+  expect(paused.body.alpha).toBeGreaterThan(0);
+  expect(paused.tick - paused.body.startTick).toBeLessThan(DEATH_TICKS);
+  // Taps go through a body to whatever is under it.
+  expect(paused.body.interactive).toBe(false);
+  await page.waitForTimeout(500);
+  expect(await look()).toEqual(paused);
+
+  await page.keyboard.press('P');
+  await expect.poll(() => hasRemains(page, enemyId), { timeout: 30_000 }).toBe(false);
+  expect((await snapshot(page)).tick - paused.body.startTick).toBeGreaterThanOrEqual(DEATH_TICKS);
+});
+
+test('an enemy that walks out of the map leaves no body behind', async ({ page }) => {
+  await page.keyboard.press('Space');
+  await expect.poll(async () => (await snapshot(page)).enemies, { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
+  const lives = (await snapshot(page)).lives;
+
+  // Test setup only: the first enemy is put half a second of walking from the
+  // exit, so it is seen near it before it walks out, as it would be in play.
+  // Nothing can kill it on the way, so the result never depends on the fight.
+  const enemyId = await page.evaluate(() => {
+    const scene = (window as any).__game.scene.getScene('game');
+    const enemy = scene.game_.enemies[0];
+    enemy.hp = enemy.maxHp = 1e9;
+    enemy.distance = scene.level.paths[enemy.path].length - enemy.speed / 2;
+    enemy.blockedBy = null;
+    enemy.stunTicks = 0;
+    enemy.slowTicks = 0;
+    return enemy.id as number;
+  });
+  await expect.poll(async () => (await snapshot(page)).lives, { timeout: 30_000 }).toBeLessThan(lives);
+  expect(await hasRemains(page, enemyId)).toBe(false);
+});
+
+test('units lower on the screen are drawn in front, flyers above them and the marks above all', async ({
+  page,
+}) => {
+  await page.keyboard.press('Space');
+  await expect.poll(async () => (await snapshot(page)).enemies, { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+  await page.keyboard.press('P');
+  await expect.poll(async () => (await snapshot(page)).paused).toBe(true);
+
+  const drawn = await drawnUnits(page);
+  // Depth follows the feet to the whole pixel; the feet are a fixed distance below `y`.
+  const ground = drawn.units.filter((unit) => !unit.flying).sort((a, b) => a.y - b.y);
+  expect(ground.length).toBeGreaterThanOrEqual(5);
+  for (let i = 1; i < ground.length; i++) {
+    if (Math.round(ground[i].y) > Math.round(ground[i - 1].y)) {
+      expect(ground[i].depth).toBeGreaterThan(ground[i - 1].depth);
+    }
+  }
+  const deepestGround = Math.max(...ground.map((unit) => unit.depth));
+  for (const flyer of drawn.units.filter((unit) => unit.flying)) expect(flyer.depth).toBeGreaterThan(deepestGround);
+  for (const unit of drawn.units) expect(unit.depth).toBeLessThan(drawn.lowestMarkDepth);
 });
 
 test('a locked ability does not fire and says when it unlocks', async ({ page }) => {

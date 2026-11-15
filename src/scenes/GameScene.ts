@@ -4,6 +4,8 @@ import { pointAt, type Point } from '../core/path';
 import {
   canUseAbility,
   createGame,
+  distanceToExit,
+  enemyPosition,
   isAlive,
   isMoving,
   isOver,
@@ -14,6 +16,7 @@ import {
   type GameState,
   type Hero,
   type Level,
+  type Shot,
 } from '../core/simulation';
 import { findDifficulty, type DifficultyId } from '../data/difficulty';
 import { findMap, MAPS, type GameMap } from '../data/maps';
@@ -27,7 +30,25 @@ import { CAST_EFFECT_TICKS, type CastEffect } from '../entities/abilityEffects';
 import { drawBoard } from '../entities/board';
 import { blockedOffsets } from '../entities/crowd';
 import { drawOverlay, type Aim } from '../entities/overlay';
+import { activeRemains, addRemains, escapedEnemies, type Remains, type Vanished } from '../entities/remains';
 import { keepSpritesCrisp, loadSprites } from '../entities/sprites';
+import {
+  ATTACK_MOTION_TICKS,
+  attackOffset,
+  deathPose,
+  DOWN_ALPHA,
+  heroFallPose,
+  hitSource,
+  hitTint,
+  knockbackOffset,
+  LUNGE_REACH,
+  RECOIL_REACH,
+  startAttackMemory,
+  trackEnemyAttack,
+  type AttackMemory,
+  type Strike,
+  type Tint,
+} from '../entities/unitMotion';
 import {
   bodyCenterRise,
   FOOT_DROP,
@@ -35,8 +56,10 @@ import {
   ticksSinceHit,
   trackHit,
   UNIT_SHEETS,
+  unitDepth,
   unitFrame,
   type HitMemory,
+  type UnitName,
 } from '../entities/units';
 import {
   ABILITY_KEYS,
@@ -110,15 +133,36 @@ interface HeroView {
   lastX: number;
   /** Health last frame and the tick it last dropped, to flash the hit frame. */
   hits: HitMemory;
+  /** Where it last stood alive: a fallen hero goes down there, not at its spawn point. */
+  downFrom: Point;
 }
 
 interface EnemyView {
   sprite: Phaser.GameObjects.Image;
   shadow: Phaser.GameObjects.Ellipse | null;
+  unit: UnitName;
+  flying: boolean;
   lastX: number;
   /** Shift on screen from its spot on the road, eased towards where it should be. */
   offset: Point;
+  hits: HitMemory;
+  attack: AttackMemory;
+  /** Which way the latest hit pushed it, when it is known where the hit came from. */
+  knockAway: Point | null;
+  // How it was last drawn, to leave its body there if it is killed.
+  ground: Point;
+  lift: number;
+  frame: number;
+  /** How far it still had to walk, to tell a kill from an escape. */
+  distanceLeft: number;
+  speed: number;
+  livesCost: number;
 }
+
+const NO_OFFSET: Point = { x: 0, y: 0 };
+
+/** How close to a shot's landing spot an enemy may be and still have been hit by it. */
+const STRIKE_MARGIN = 12;
 
 interface TowerView {
   base: Phaser.GameObjects.Image;
@@ -163,6 +207,12 @@ export class GameScene extends Phaser.Scene {
   private enemyPositions = new Map<number, Point>();
   private heroViews = new Map<number, HeroView>();
   private towerViews = new Map<number, TowerView>();
+  /** Killed enemies still falling, drawn only. Also read by the browser tests. */
+  private remains: Remains[] = [];
+  /** Images reused to draw `remains`, one per body; never more than the list can hold. */
+  private remainsSprites: Phaser.GameObjects.Image[] = [];
+  /** Tick and lives when enemies were last drawn, to tell the ones killed from the ones that got out. */
+  private lastDrawn = { tick: 0, lives: 0 };
   private overlay!: Phaser.GameObjects.Graphics;
 
   private heroCards!: HeroCards;
@@ -276,6 +326,10 @@ export class GameScene extends Phaser.Scene {
     this.enemyPositions.clear();
     this.heroViews.clear();
     this.towerViews.clear();
+    // The images went with the old scene; the bodies belong to the old game.
+    this.remains = [];
+    this.remainsSprites = [];
+    this.lastDrawn = { tick: this.game_.tick, lives: this.game_.lives };
     this.knownLevels.clear();
     this.castEffects = [];
     this.shownCasts.clear();
@@ -322,6 +376,7 @@ export class GameScene extends Phaser.Scene {
     this.trackCastEffects();
     this.announceLevelUps();
     this.syncEnemies(this.game_.phase === 'wave' ? alpha : 0);
+    this.syncRemains();
     this.syncHeroes();
     this.syncTowers();
     drawOverlay(this.overlay, {
@@ -364,8 +419,12 @@ export class GameScene extends Phaser.Scene {
         if (hero.lastCast) this.shownCasts.set(hero.id, hero.lastCast.tick);
         // Health that differs from this copy's is a correction, not a hit.
         const view = this.heroViews.get(hero.id);
-        if (view) view.hits = { hp: hero.hp, hitTick: null };
+        if (view) {
+          view.hits = { hp: hero.hp, hitTick: null };
+          view.downFrom = { x: hero.x, y: hero.y };
+        }
       }
+      this.adoptEnemiesOf(snapshot);
       this.coopClock = 0;
     }
 
@@ -757,7 +816,9 @@ export class GameScene extends Phaser.Scene {
 
   // --- sprites -----------------------------------------------------------
   // Heroes and enemies stand with their feet `FOOT_DROP` below their map point.
-  // Their frames follow game ticks (see `unitFrame`), so they freeze with a pause.
+  // Their frames follow game ticks (see `unitFrame`), so they freeze with a pause,
+  // and so do their attacks, hits and falls (see `unitMotion`). They are drawn
+  // in order of where their feet are (see `unitDepth`).
 
   private createHeroViews(): void {
     for (const hero of this.game_.heroes) {
@@ -778,7 +839,13 @@ export class GameScene extends Phaser.Scene {
         })
         .setOrigin(0.5)
         .setDepth(3);
-      this.heroViews.set(hero.id, { body, label, lastX: hero.x, hits: { hp: hero.hp, hitTick: null } });
+      this.heroViews.set(hero.id, {
+        body,
+        label,
+        lastX: hero.x,
+        hits: { hp: hero.hp, hitTick: null },
+        downFrom: { x: hero.x, y: hero.y },
+      });
     }
   }
 
@@ -787,20 +854,107 @@ export class GameScene extends Phaser.Scene {
     for (const hero of this.game_.heroes) {
       const view = this.heroViews.get(hero.id);
       if (!view) continue;
-      // A fallen hero waits, faded, at its spawn point.
-      const alpha = isAlive(hero) ? 1 : 0.3;
       view.hits = trackHit(view.hits, hero.hp, tick);
-      const pose = { moving: isAlive(hero) && isMoving(hero), ticksSinceHit: ticksSinceHit(view.hits, tick) };
+      const sinceHit = ticksSinceHit(view.hits, tick);
+      const pose = { moving: isAlive(hero) && isMoving(hero), ticksSinceHit: sinceHit };
       const frame = unitFrame(UNIT_SHEETS[HERO_STYLE[hero.type].sprite], pose, tick, hero.id);
       if (hero.x !== view.lastX) view.body.setFlipX(hero.x < view.lastX);
       view.lastX = hero.x;
-      view.body.setFrame(frame).setPosition(hero.x, hero.y + FOOT_DROP).setAlpha(alpha);
-      view.label.setPosition(hero.x + 13, hero.y + 12).setAlpha(alpha);
+
+      let at: Point = hero;
+      let offset = NO_OFFSET;
+      let angle = 0;
+      let alpha = 1;
+      if (isAlive(hero)) {
+        view.downFrom = { x: hero.x, y: hero.y };
+        const shot = hero.lastShot;
+        if (shot) {
+          // It turns to whatever it fights. Melee heroes step into the blow;
+          // the others are pushed back a little by their own shot.
+          if (tick - shot.tick < ATTACK_MOTION_TICKS && shot.x !== hero.x) view.body.setFlipX(shot.x < hero.x);
+          const melee = this.level.heroTypes[hero.type].blockCount > 0;
+          offset = attackOffset(tick - shot.tick, hero, shot, melee ? LUNGE_REACH : RECOIL_REACH);
+        }
+      } else {
+        // A fallen hero goes down where it stood, then waits, faded, at its spawn point.
+        const fall = heroFallPose(this.level.heroRespawnTicks - hero.respawnTicks, view.body.flipX);
+        if (fall) {
+          at = view.downFrom;
+          angle = fall.angle;
+          alpha = fall.alpha;
+        } else {
+          alpha = DOWN_ALPHA;
+        }
+      }
+      view.body
+        .setFrame(frame)
+        .setPosition(at.x + offset.x, at.y + FOOT_DROP + offset.y)
+        .setAngle(angle)
+        .setAlpha(alpha);
+      setDepthIfChanged(view.body, unitDepth(at.y + FOOT_DROP, false, this.level.height));
+      paintTint(view.body, hitTint(sinceHit));
+      view.label.setPosition(at.x + 13, at.y + 12).setAlpha(isAlive(hero) ? 1 : DOWN_ALPHA);
     }
   }
 
+  /** Strikes that landed after `sinceTick`: where each hit on an enemy may have come from. */
+  private strikesSince(sinceTick: number): Strike[] {
+    const { game_: game, level } = this;
+    const isNew = (shot: Shot | null): shot is Shot => shot !== null && shot.tick > sinceTick;
+    const strikes: Strike[] = [];
+    for (const hero of game.heroes) {
+      const type = level.heroTypes[hero.type];
+      if (isNew(hero.lastShot)) {
+        strikes.push({ from: { x: hero.x, y: hero.y }, at: hero.lastShot, reach: STRIKE_MARGIN + type.splashRadius });
+      }
+      // An ability bursts from where it landed.
+      const cast = hero.lastCast;
+      if (cast && isNew(cast)) {
+        strikes.push({ from: cast, at: cast, reach: STRIKE_MARGIN + type.abilities[cast.ability].radius });
+      }
+    }
+    for (const tower of game.towers) {
+      if (!isNew(tower.lastShot)) continue;
+      const stats = level.towerTypes[tower.type].levels[tower.level];
+      strikes.push({ from: level.buildSlots[tower.slot], at: tower.lastShot, reach: STRIKE_MARGIN + stats.splashRadius });
+    }
+    return strikes;
+  }
+
+  /**
+   * A shared game was replaced by the server's copy: enemies missing from it
+   * were not killed, and differences in health or cooldowns are corrections,
+   * not hits or attacks. Bodies still falling belong to the old copy.
+   */
+  private adoptEnemiesOf(snapshot: GameState): void {
+    this.remains = [];
+    const present = new Map(snapshot.enemies.map((enemy) => [enemy.id, enemy]));
+    for (const [id, view] of this.enemyViews) {
+      const enemy = present.get(id);
+      if (!enemy) {
+        this.dropEnemyView(id, view);
+        continue;
+      }
+      view.hits = { hp: enemy.hp, hitTick: null };
+      view.attack = startAttackMemory(enemy.blockedBy, enemy.attackCooldownTicks);
+      view.knockAway = null;
+    }
+    this.lastDrawn = { tick: snapshot.tick, lives: snapshot.lives };
+  }
+
+  private dropEnemyView(id: number, view: EnemyView): void {
+    view.sprite.destroy();
+    view.shadow?.destroy();
+    this.enemyViews.delete(id);
+    this.enemyPositions.delete(id);
+  }
+
   private syncEnemies(alpha: number): void {
+    const { game_: game, level } = this;
+    const tick = game.tick;
     const alive = new Set<number>();
+    // Built on the first hit of the frame, to tell where hits came from.
+    let strikes: Strike[] | null = null;
     // Enemies held by the same hero stand on one spot; spread them on screen.
     const crowd = blockedOffsets(
       this.game_.enemies
@@ -812,20 +966,52 @@ export class GameScene extends Phaser.Scene {
           return { id: enemy.id, heroId: enemy.blockedBy!, direction: { x: ahead.x - here.x, y: ahead.y - here.y } };
         }),
     );
-    for (const enemy of this.game_.enemies) {
+    for (const enemy of game.enemies) {
       alive.add(enemy.id);
       const style = ENEMY_STYLE[enemy.type];
-      const flying = this.level.enemyTypes[enemy.type].flying;
+      const type = level.enemyTypes[enemy.type];
+      const flying = type.flying;
       let view = this.enemyViews.get(enemy.id);
       if (!view) {
-        const sprite = this.add.image(0, 0, style.sprite, 0).setOrigin(0.5, 1).setScale(style.scale).setDepth(2);
+        const sprite = this.add.image(0, 0, style.sprite, 0).setOrigin(0.5, 1).setScale(style.scale);
         // Flyers cast a shadow on the ground, so their height reads at a glance.
         const shadow = flying
           ? this.add.ellipse(0, 0, style.radius * 1.6, style.radius * 0.7, 0x000000, 0.28).setDepth(1)
           : null;
-        view = { sprite, shadow, lastX: Number.NEGATIVE_INFINITY, offset: { x: 0, y: 0 } };
+        view = {
+          sprite,
+          shadow,
+          unit: style.sprite,
+          flying,
+          lastX: Number.NEGATIVE_INFINITY,
+          offset: { x: 0, y: 0 },
+          hits: { hp: enemy.hp, hitTick: null },
+          attack: startAttackMemory(enemy.blockedBy, enemy.attackCooldownTicks),
+          knockAway: null,
+          ground: { x: 0, y: 0 },
+          lift: 0,
+          frame: 0,
+          distanceLeft: distanceToExit(level, enemy),
+          speed: enemy.speed,
+          livesCost: type.livesCost,
+        };
         this.enemyViews.set(enemy.id, view);
       }
+      if (enemy.hp < view.hits.hp) {
+        // Pushed away from whatever hit it, when that can be told.
+        strikes ??= this.strikesSince(this.lastDrawn.tick);
+        const at = enemyPosition(level, enemy);
+        const from = hitSource(at, strikes);
+        view.knockAway = from && { x: at.x - from.x, y: at.y - from.y };
+      }
+      view.hits = trackHit(view.hits, enemy.hp, tick);
+      view.attack = trackEnemyAttack(
+        view.attack,
+        enemy.blockedBy,
+        enemy.attackCooldownTicks,
+        type.attackIntervalTicks,
+        tick,
+      );
       // Extrapolate the pending fraction of a step so motion stays smooth.
       const stopped = enemy.stunTicks > 0 || enemy.blockedBy !== null;
       const lookAhead = stopped ? 0 : (enemy.speed * alpha * STEP_MS) / 1000;
@@ -837,28 +1023,136 @@ export class GameScene extends Phaser.Scene {
 
       // Walkers step through their run frames; flyers also hover above their shadow.
       const sheet = UNIT_SHEETS[style.sprite];
-      const lift = flying ? 16 + Math.sin((this.game_.tick / 6 + enemy.id) / 2) * 3 : 0;
-      const pose = { moving: !stopped, ticksSinceHit: null };
+      const lift = flying ? 16 + Math.sin((tick / 6 + enemy.id) / 2) * 3 : 0;
+      const sinceHit = ticksSinceHit(view.hits, tick);
+      const pose = { moving: !stopped, ticksSinceHit: sinceHit };
       // Facing follows the road, not the sideways shuffle into the crowd.
       if (view.lastX !== Number.NEGATIVE_INFINITY && onRoad.x !== view.lastX) {
         view.sprite.setFlipX(onRoad.x < view.lastX);
       }
       view.lastX = onRoad.x;
+      // A held enemy lunges at the hero holding it; a hit knocks it back a little.
+      const blocker = enemy.blockedBy === null ? undefined : game.heroes.find((hero) => hero.id === enemy.blockedBy);
+      const sinceAttack = view.attack.attackTick === null ? null : tick - view.attack.attackTick;
+      const lunge = blocker ? attackOffset(sinceAttack, ground, blocker, LUNGE_REACH) : NO_OFFSET;
+      const knock = knockbackOffset(sinceHit, view.knockAway);
+      const drawn = { x: ground.x + lunge.x + knock.x, y: ground.y + lunge.y + knock.y };
+      view.frame = unitFrame(sheet, pose, tick, enemy.id);
       view.sprite
-        .setFrame(unitFrame(sheet, pose, this.game_.tick, enemy.id))
-        .setPosition(ground.x, ground.y + FOOT_DROP - lift);
+        .setFrame(view.frame)
+        .setPosition(drawn.x, drawn.y + FOOT_DROP - lift);
+      setDepthIfChanged(view.sprite, unitDepth(ground.y + FOOT_DROP, flying, level.height));
+      paintTint(view.sprite, hitTint(sinceHit));
       // The shadow lies where the feet would stand.
-      view.shadow?.setPosition(ground.x, ground.y + FOOT_DROP - 2);
-      // Rings and health bars go around the drawn body.
+      view.shadow?.setPosition(drawn.x, drawn.y + FOOT_DROP - 2);
+      // Rings and health bars go around the body, and keep still through its moves.
       this.enemyPositions.set(enemy.id, { x: ground.x, y: ground.y - lift - bodyCenterRise(sheet, style.scale) });
+      view.ground = ground;
+      view.lift = lift;
+      view.distanceLeft = distanceToExit(level, enemy);
+      view.speed = enemy.speed;
     }
+    // Gone from the game: killed, and then it leaves a body that falls, or out
+    // of the map, costing lives, and then it simply goes.
+    const vanished: Vanished[] = [];
     for (const [id, view] of this.enemyViews) {
-      if (!alive.has(id)) {
-        view.sprite.destroy();
-        view.shadow?.destroy();
-        this.enemyViews.delete(id);
-        this.enemyPositions.delete(id);
+      if (alive.has(id)) continue;
+      vanished.push({ id, distanceLeft: view.distanceLeft, livesCost: view.livesCost, speed: view.speed });
+    }
+    if (vanished.length > 0) {
+      const escaped = escapedEnemies(vanished, {
+        livesLost: this.lastDrawn.lives - game.lives,
+        ticks: tick - this.lastDrawn.tick,
+        outOfLives: game.lives === 0,
+      });
+      for (const { id } of vanished) {
+        const view = this.enemyViews.get(id)!;
+        if (!escaped.has(id)) this.leaveRemains(id, view, tick);
+        this.dropEnemyView(id, view);
       }
+    }
+    this.lastDrawn = { tick, lives: game.lives };
+  }
+
+  /**
+   * How the units are drawn right now, for the browser tests: where each one
+   * stands (its map point; the feet are a fixed distance below), its depth,
+   * and the bodies still falling. Reads only; the game never calls it.
+   */
+  describeUnitsForTests() {
+    const units = [
+      ...this.game_.heroes.filter(isAlive).map((hero) => ({
+        kind: 'hero' as const,
+        id: hero.id,
+        y: hero.y,
+        depth: this.heroViews.get(hero.id)?.body.depth ?? 0,
+        flying: false,
+      })),
+      ...[...this.enemyViews].map(([id, view]) => ({
+        kind: 'enemy' as const,
+        id,
+        y: view.ground.y,
+        depth: view.sprite.depth,
+        flying: view.flying,
+      })),
+    ];
+    const bodies = this.remains.map((body, index) => {
+      const sprite = this.remainsSprites[index];
+      return {
+        id: body.id,
+        startTick: body.startTick,
+        alpha: sprite?.alpha ?? 0,
+        angle: sprite?.angle ?? 0,
+        visible: sprite?.visible ?? false,
+        interactive: Boolean(sprite?.input),
+      };
+    });
+    const labels = [...this.heroViews.values()].map((view) => view.label.depth);
+    return { tick: this.game_.tick, units, bodies, lowestMarkDepth: Math.min(this.overlay.depth, ...labels) };
+  }
+
+  private leaveRemains(id: number, view: EnemyView, tick: number): void {
+    this.remains = addRemains(this.remains, {
+      id,
+      sprite: view.unit,
+      frame: view.frame,
+      scale: view.sprite.scaleX,
+      x: view.ground.x,
+      y: view.ground.y + FOOT_DROP,
+      lift: view.lift,
+      flipX: view.sprite.flipX,
+      flying: view.flying,
+      startTick: tick,
+    });
+  }
+
+  /**
+   * Draws the bodies of killed enemies as they fall and fade, timed by game
+   * ticks. The images are kept and reused: a busy wave makes no new ones once
+   * the list is full. They are never interactive, so taps go through them.
+   */
+  private syncRemains(): void {
+    const tick = this.game_.tick;
+    this.remains = activeRemains(this.remains, tick);
+    this.remains.forEach((body, index) => {
+      const sprite = (this.remainsSprites[index] ??= this.add.image(0, 0, body.sprite).setOrigin(0.5, 1));
+      const since = tick - body.startTick;
+      const pose = deathPose(since, body.flipX);
+      // A flyer drops to the ground as it falls.
+      const flying = body.flying && pose.drop < 1;
+      sprite
+        .setTexture(body.sprite, body.frame)
+        .setScale(body.scale)
+        .setFlipX(body.flipX)
+        .setPosition(body.x, body.y - body.lift * (1 - pose.drop))
+        .setAngle(pose.angle)
+        .setAlpha(pose.alpha)
+        .setVisible(true);
+      setDepthIfChanged(sprite, unitDepth(body.y, flying, this.level.height));
+      paintTint(sprite, hitTint(since));
+    });
+    for (let index = this.remains.length; index < this.remainsSprites.length; index++) {
+      this.remainsSprites[index].setVisible(false);
     }
   }
 
@@ -1134,6 +1428,21 @@ export class GameScene extends Phaser.Scene {
     );
     this.towerMenu.sync(game.gold);
   }
+}
+
+/**
+ * Every new depth, even an equal one, makes Phaser sort the whole scene before
+ * the next frame; units are drawn every frame, so they only set it when it moves.
+ */
+function setDepthIfChanged(sprite: Phaser.GameObjects.Image, depth: number): void {
+  if (sprite.depth !== depth) sprite.setDepth(depth);
+}
+
+/** Colours a unit for a hit, or puts its own colours back. */
+function paintTint(sprite: Phaser.GameObjects.Image, tint: Tint | null): void {
+  if (!tint) sprite.clearTint();
+  else if (tint.fill) sprite.setTintFill(tint.color);
+  else sprite.setTint(tint.color);
 }
 
 /** An id for a new game: unique enough to tell one player's games apart. */

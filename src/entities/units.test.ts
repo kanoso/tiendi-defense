@@ -13,6 +13,7 @@ import {
   ticksSinceHit,
   trackHit,
   UNIT_SHEETS,
+  unitDepth,
   unitFrame,
   type UnitSheet,
 } from './units';
@@ -126,6 +127,32 @@ describe('unit layout', () => {
     // 22 rows drawn twice as large reach 44 px up from the feet.
     expect(headRise(knight, 2)).toBe(44 - FOOT_DROP);
     expect(bodyCenterRise(knight, 2)).toBe(22 - FOOT_DROP);
+  });
+});
+
+describe('unitDepth', () => {
+  const height = 540;
+
+  it('draws a unit lower on the screen in front of one higher up', () => {
+    expect(unitDepth(300, false, height)).toBeGreaterThan(unitDepth(299, false, height));
+  });
+
+  it('gives the same depth to feet on the same pixel, so slow drift does not reorder units', () => {
+    expect(unitDepth(300.1, false, height)).toBe(unitDepth(300.4, false, height));
+    expect(unitDepth(300.2, true, height)).toBe(unitDepth(299.8, true, height));
+  });
+
+  it('keeps flyers above every unit on the ground', () => {
+    expect(unitDepth(0, true, height)).toBeGreaterThan(unitDepth(height, false, height));
+  });
+
+  it('stays above the towers and shadows and below the hero labels and the marks', () => {
+    for (const flying of [false, true]) {
+      for (const feet of [-50, 0, height, height + 50]) {
+        expect(unitDepth(feet, flying, height)).toBeGreaterThan(2);
+        expect(unitDepth(feet, flying, height)).toBeLessThan(3);
+      }
+    }
   });
 });
 
