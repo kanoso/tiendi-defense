@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { TICKS_PER_SECOND } from '../core/types';
 import {
   ATTACK_MOTION_TICKS,
   attackOffset,
   DEATH_TICKS,
   deathPose,
   DOWN_ALPHA,
+  FADE_FROM_TICK,
   FALL_TICKS,
   HERO_FALL_TICKS,
   heroFallPose,
@@ -155,9 +157,20 @@ describe('deathPose', () => {
     expect(half - quarter).toBeGreaterThan(quarter);
   });
 
+  it('lasts long enough for a player to notice it: at least a second', () => {
+    expect(DEATH_TICKS).toBeGreaterThanOrEqual(TICKS_PER_SECOND);
+  });
+
+  it('lies on the ground fully visible for a while before fading', () => {
+    expect(deathPose(FALL_TICKS, false).alpha).toBe(1);
+    expect(deathPose(FADE_FROM_TICK, false).alpha).toBe(1);
+    expect(FADE_FROM_TICK - FALL_TICKS).toBeGreaterThanOrEqual(TICKS_PER_SECOND / 2);
+  });
+
   it('fades out by the end of the death', () => {
-    expect(deathPose(DEATH_TICKS / 2, false).alpha).toBeLessThan(1);
-    expect(deathPose(DEATH_TICKS / 2, false).alpha).toBeGreaterThan(0);
+    const midFade = (FADE_FROM_TICK + DEATH_TICKS) / 2;
+    expect(deathPose(midFade, false).alpha).toBeLessThan(1);
+    expect(deathPose(midFade, false).alpha).toBeGreaterThan(0);
     expect(deathPose(DEATH_TICKS, false).alpha).toBe(0);
   });
 });

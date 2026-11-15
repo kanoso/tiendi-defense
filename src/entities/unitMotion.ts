@@ -114,12 +114,12 @@ export function hitSource(target: Point, strikes: readonly Strike[]): Point | nu
   return best?.from ?? null;
 }
 
-/** How long a killed enemy stays on the map. */
-export const DEATH_TICKS = 24;
+/** How long a killed enemy stays on the map: long enough for a player to see it go down. */
+export const DEATH_TICKS = 75;
 /** How long it takes to hit the ground. */
-export const FALL_TICKS = 10;
-/** It starts fading once it has nearly landed. */
-const FADE_FROM_TICK = 8;
+export const FALL_TICKS = 15;
+/** It lies there, fully visible, until this tick, then fades away. */
+export const FADE_FROM_TICK = 50;
 
 export interface FallPose {
   /** Degrees, clockwise; ±90 lies on the ground. */
