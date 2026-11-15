@@ -33,6 +33,7 @@ import {
   saveProgress,
 } from '../progress/storage';
 import { RANK_BONUS } from '../progress/upgrades';
+import { carouselStart, clampFirst } from '../ui/carousel';
 import { openLobby } from '../ui/lobby';
 
 const MAX_STARS = 3;
@@ -43,17 +44,30 @@ const DIM_BORDER = 0x596150;
 const CHOICES_TOP = 92;
 const CHOICE_HEIGHT = 32;
 
+// The map cards keep one readable size. When there are more maps than fit, they
+// sit on a strip that slides behind a window, with an arrow button on each side.
 const CARD_WIDTH = 270;
 const CARD_HEIGHT = 150;
-const CARD_GAP = 24;
+const CARD_GAP = 14;
 const CARD_TOP = 142;
+const CARDS_SHOWN = 3;
+/** Wide enough for a finger on a phone, where the stage is drawn at about 0.72. */
+const ARROW_WIDTH = 56;
+const WINDOW_WIDTH = CARDS_SHOWN * CARD_WIDTH + (CARDS_SHOWN - 1) * CARD_GAP;
+const WINDOW_LEFT = (GAME_WIDTH - WINDOW_WIDTH) / 2;
+const CARD_STEP = CARD_WIDTH + CARD_GAP;
+const DOTS_Y = CARD_TOP + CARD_HEIGHT + 14;
+const SLIDE_MS = 180;
+/** A press that moves less than this is a tap; one that slides further sideways is a swipe. */
+const TAP_SLOP = 14;
+const SWIPE_MIN = 50;
 
 const HERO_TOP = 356;
 const HERO_WIDTH = 204;
 const HERO_HEIGHT = 150;
 const HERO_GAP = 16;
 
-const MAP_KEYS = ['ONE', 'TWO', 'THREE'];
+const MAP_KEYS = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE'];
 
 // Positions are centers, in pixels of the 960 x 540 stage. They are kept so the
 // browser tests can click what is on screen.
@@ -64,8 +78,32 @@ interface MapCard {
   stars: number;
   /** Best endless score at the difficulty currently selected, if any. */
   record: number | null;
+  /** Inside the window of the carousel, where it can be clicked. */
+  visible: boolean;
   x: number;
   y: number;
+}
+
+interface ArrowButton {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  enabled: boolean;
+}
+
+/** Where the map carousel stands. */
+interface Carousel {
+  /** Index of the first map in the window. */
+  first: number;
+  shown: number;
+  total: number;
+  /** True while the cards slide. */
+  readonly moving: boolean;
+  /** One per map: whether it is in the window. */
+  dots: boolean[];
+  prev: ArrowButton;
+  next: ArrowButton;
 }
 
 interface ChoiceButton<Id extends string> {
@@ -98,6 +136,20 @@ let requestedMap = address.get('map');
 export class MenuScene extends Phaser.Scene {
   // What is on screen, for the browser tests.
   cards: MapCard[] = [];
+  carousel: Carousel | null = null;
+  /**
+   * The carousel's place, kept while the menu is restarted or left for a game,
+   * so it comes back where the player left it. Null before it is first drawn.
+   */
+  private keptFirst: number | null = null;
+  /** The newest map open when the carousel was last drawn: a newer one is scrolled to. */
+  private keptUnlocked = -1;
+  private strip: Phaser.GameObjects.Container | null = null;
+  private arrows: { prev: Phaser.GameObjects.Rectangle; next: Phaser.GameObjects.Rectangle } | null = null;
+  private arrowGlyphs: { prev: Phaser.GameObjects.Text; next: Phaser.GameObjects.Text } | null = null;
+  private dotMarks: Phaser.GameObjects.Arc[] = [];
+  /** The card the current press started on, if any. */
+  private pressedCard: MapCard | null = null;
   modeButtons: ChoiceButton<GameMode>[] = [];
   difficultyButtons: ChoiceButton<DifficultyId>[] = [];
   mode: GameMode = 'campaign';
@@ -165,9 +217,11 @@ export class MenuScene extends Phaser.Scene {
 
     const keyboard = this.input.keyboard;
     keyboard?.on('keydown-C', () => this.continueGame());
-    MAP_KEYS.forEach((key, index) => {
-      keyboard?.on(`keydown-${key}`, () => this.openMap(this.cards[index]));
+    MAP_KEYS.slice(0, MAPS.length).forEach((key, index) => {
+      keyboard?.on(`keydown-${key}`, () => this.openMap(this.cards[index], true));
     });
+    keyboard?.on('keydown-LEFT', () => this.slideMaps(-1));
+    keyboard?.on('keydown-RIGHT', () => this.slideMaps(1));
   }
 
   /** Offers to pick up the game left between waves, under the full screen button. */
@@ -366,62 +420,214 @@ export class MenuScene extends Phaser.Scene {
 
   // --- maps ----------------------------------------------------------------
 
+  /**
+   * The map cards on a strip seen through a window of three. It opens where the
+   * player left it, unless a map was unlocked since: then on the newest one.
+   */
   private drawMaps(progress: Progress): void {
-    const total = MAPS.length * CARD_WIDTH + (MAPS.length - 1) * CARD_GAP;
-    const left = (GAME_WIDTH - total) / 2;
+    const unlocked = MAPS.map((map) => isUnlocked(progress, MAP_IDS, map.id));
+    const newest = unlocked.lastIndexOf(true);
+    this.keptFirst = carouselStart({
+      kept: this.keptFirst,
+      keptNewest: this.keptUnlocked,
+      newest,
+      total: MAPS.length,
+      shown: CARDS_SHOWN,
+    });
+    this.keptUnlocked = newest;
+
+    this.strip = this.add.container(-this.keptFirst * CARD_STEP, 0);
+    // The window's shape is not on the display list, so the scene would not
+    // free it: it goes with the menu, which restarts on every choice.
+    const window = this.make.graphics({}, false);
+    window.fillStyle(0xffffff).fillRect(WINDOW_LEFT - 4, CARD_TOP - 4, WINDOW_WIDTH + 8, CARD_HEIGHT + 8);
+    const mask = window.createGeometryMask();
+    this.strip.setMask(mask);
+    this.events.once('shutdown', () => {
+      mask.destroy();
+      window.destroy();
+    });
+
     this.cards = MAPS.map((map, index) => {
       const card: MapCard = {
         mapId: map.id,
-        unlocked: isUnlocked(progress, MAP_IDS, map.id),
+        unlocked: unlocked[index],
         stars: starsOn(progress, map.id, this.difficulty),
         record: endlessBest(progress, map.id, this.difficulty)?.score ?? null,
-        x: left + index * (CARD_WIDTH + CARD_GAP) + CARD_WIDTH / 2,
+        visible: false,
+        x: 0,
         y: CARD_TOP + CARD_HEIGHT / 2,
       };
       this.drawMapCard(map, card, index, progress);
       return card;
     });
+
+    this.drawArrows();
+    this.dotMarks = MAPS.map((_, index) =>
+      this.add.circle(GAME_WIDTH / 2 + (index - (MAPS.length - 1) / 2) * 18, DOTS_Y, 5, 0xffe066),
+    );
+    // A swipe across the cards moves along; a tap on one is handled by the card.
+    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      // Cards hear the release first; after it, no press is on a card any more.
+      this.pressedCard = null;
+      if (pointer.downY < CARD_TOP || pointer.downY > CARD_TOP + CARD_HEIGHT) return;
+      const dx = pointer.upX - pointer.downX;
+      if (Math.abs(dx) < SWIPE_MIN || Math.abs(dx) < Math.abs(pointer.upY - pointer.downY)) return;
+      this.slideMaps(dx < 0 ? 1 : -1);
+    });
+    this.placeCards(false);
   }
 
+  /** The place that shows a map, one card in from the edge when there is room. */
+  private firstShowing(index: number): number {
+    return this.clampFirst(index - 1);
+  }
+
+  private clampFirst(first: number): number {
+    return clampFirst(first, MAPS.length, CARDS_SHOWN);
+  }
+
+  /** The arrow on each side of the window. Dimmed, and deaf, at the end it points to. */
+  private drawArrows(): void {
+    const height = CARD_HEIGHT;
+    const y = CARD_TOP + height / 2;
+    const make = (x: number, glyph: string, step: number) => {
+      const frame = this.panel(x, y, ARROW_WIDTH, height, true);
+      frame
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.slideMaps(step))
+        .on('pointerover', () => frame.setFillStyle(PANEL_HOVER_COLOR, 0.96))
+        .on('pointerout', () => frame.setFillStyle(PANEL_COLOR, 0.94));
+      return { frame, text: this.label(x, y - 3, glyph, 40, '#ffe066', true) };
+    };
+    const prev = make(WINDOW_LEFT / 2, '‹', -1);
+    const next = make(GAME_WIDTH - WINDOW_LEFT / 2, '›', 1);
+    this.arrows = { prev: prev.frame, next: next.frame };
+    this.arrowGlyphs = { prev: prev.text, next: next.text };
+  }
+
+  /** Moves the window by `step` maps, if there are maps that way. */
+  private slideMaps(step: number): void {
+    if (this.keptFirst === null) return;
+    const first = this.clampFirst(this.keptFirst + step);
+    if (first === this.keptFirst) return;
+    this.keptFirst = first;
+    this.placeCards(true);
+  }
+
+  /** Brings the strip, the arrows, the dots and what the tests read up to the window's place. */
+  private placeCards(animate: boolean): void {
+    const first = this.keptFirst ?? 0;
+    const offset = -first * CARD_STEP;
+    this.cards.forEach((card, index) => {
+      card.visible = index >= first && index < first + CARDS_SHOWN;
+      card.x = WINDOW_LEFT + index * CARD_STEP + CARD_WIDTH / 2 + offset;
+    });
+    if (this.strip) {
+      this.tweens.killTweensOf(this.strip);
+      if (animate) {
+        this.tweens.add({
+          targets: this.strip,
+          x: offset,
+          duration: SLIDE_MS,
+          ease: 'Cubic.easeOut',
+        });
+      } else {
+        this.strip.x = offset;
+      }
+    }
+
+    const last = Math.max(0, MAPS.length - CARDS_SHOWN);
+    const arrow = (side: 'prev' | 'next', enabled: boolean): ArrowButton => {
+      const frame = this.arrows![side];
+      frame.setAlpha(enabled ? 1 : 0.35).setStrokeStyle(enabled ? 3 : 2, enabled ? SELECTION_COLOR : DIM_BORDER);
+      if (frame.input) frame.input.enabled = enabled;
+      if (!enabled) frame.setFillStyle(PANEL_COLOR, 0.94);
+      this.arrowGlyphs![side].setAlpha(enabled ? 1 : 0.3);
+      return { x: frame.x, y: frame.y, width: frame.width, height: frame.height, enabled };
+    };
+    const dots = this.cards.map((card) => card.visible);
+    const strip = this.strip;
+    this.dotMarks.forEach((dot, index) => dot.setFillStyle(dots[index] ? 0xffe066 : 0x596150));
+    this.carousel = {
+      first,
+      shown: Math.min(CARDS_SHOWN, MAPS.length),
+      total: MAPS.length,
+      // Read when asked: the cards are still sliding until the strip reaches its place.
+      get moving() {
+        return strip !== null && Math.abs(strip.x - offset) > 0.5;
+      },
+      dots,
+      prev: arrow('prev', first > 0),
+      next: arrow('next', first < last),
+    };
+  }
+
+  /** Draws a card on the strip, at its place counted from the strip's start. */
   private drawMapCard(map: GameMap, card: MapCard, index: number, progress: Progress): void {
+    const x = WINDOW_LEFT + index * CARD_STEP + CARD_WIDTH / 2;
     const top = card.y - CARD_HEIGHT / 2;
-    const frame = this.panel(card.x, card.y, CARD_WIDTH, CARD_HEIGHT, card.unlocked);
-    if (card.unlocked) this.clickable(frame, () => this.openMap(card));
-    else frame.setAlpha(0.7);
+    const parts: Phaser.GameObjects.GameObject[] = [];
+    const frame = this.panel(x, card.y, CARD_WIDTH, CARD_HEIGHT, card.unlocked);
+    parts.push(frame);
+    if (card.unlocked) {
+      // Opened on release, and only by a tap that started on it, inside the
+      // window: a press that slides is a swipe, and one let go here after
+      // pressing an arrow is not meant for the card the arrow uncovers.
+      frame
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => (this.pressedCard = card))
+        .on('pointerup', (pointer: Phaser.Input.Pointer) => {
+          const inWindow = pointer.x >= WINDOW_LEFT && pointer.x <= WINDOW_LEFT + WINDOW_WIDTH;
+          if (this.pressedCard === card && inWindow && pointer.getDistance() < TAP_SLOP) this.openMap(card);
+        })
+        .on('pointerover', () => frame.setFillStyle(PANEL_HOVER_COLOR, 0.96))
+        .on('pointerout', () => frame.setFillStyle(PANEL_COLOR, 0.94));
+    } else {
+      frame.setAlpha(0.7);
+    }
 
     const faded = card.unlocked ? 1 : 0.55;
-    this.label(card.x, top + 26, `${index + 1}. ${map.name}`, 22, '#f4f1e8', true).setAlpha(faded);
-    this.add
-      .text(card.x, top + 72, map.blurb, {
-        fontFamily: FONT,
-        fontSize: '14px',
-        color: '#dfe8d5',
-        align: 'center',
-        wordWrap: { width: CARD_WIDTH - 36 },
-      })
-      .setOrigin(0.5)
-      .setAlpha(faded);
+    parts.push(this.label(x, top + 26, `${index + 1}. ${map.name}`, 22, '#f4f1e8', true).setAlpha(faded));
+    parts.push(
+      this.add
+        .text(x, top + 72, map.blurb, {
+          fontFamily: FONT,
+          fontSize: '14px',
+          color: '#dfe8d5',
+          align: 'center',
+          wordWrap: { width: CARD_WIDTH - 36 },
+        })
+        .setOrigin(0.5)
+        .setAlpha(faded),
+    );
 
     if (card.unlocked && this.mode === 'endless') {
       const best = endlessBest(progress, map.id, this.difficulty);
       const text = best ? `Récord: ${best.score} · oleada ${best.wave}` : 'Sin récord todavía';
-      this.label(card.x, top + CARD_HEIGHT - 26, text, 16, '#ffe066', true);
+      parts.push(this.label(x, top + CARD_HEIGHT - 26, text, 16, '#ffe066', true));
     } else if (card.unlocked) {
       const earned = '★'.repeat(card.stars) + '☆'.repeat(MAX_STARS - card.stars);
-      this.label(card.x, top + CARD_HEIGHT - 26, earned, 28, '#ffe066', true);
+      parts.push(this.label(x, top + CARD_HEIGHT - 26, earned, 28, '#ffe066', true));
     } else {
-      this.label(card.x, top + CARD_HEIGHT - 26, 'Gana el mapa anterior', 14, '#a9b3a0', true);
+      parts.push(this.label(x, top + CARD_HEIGHT - 26, 'Gana el mapa anterior', 14, '#a9b3a0', true));
     }
+    this.strip!.add(parts);
   }
 
-  private openMap(card: MapCard | undefined): void {
-    if (card?.unlocked) {
-      this.scene.start('game', {
-        mapId: card.mapId,
-        difficulty: this.difficulty,
-        mode: this.mode,
-      });
-    }
+  /**
+   * Starts a map, if it is open. A card is only opened while it is in the
+   * window; a number key opens its map from anywhere, and the carousel is left
+   * showing it for when the player comes back.
+   */
+  private openMap(card: MapCard | undefined, fromKey = false): void {
+    if (!card?.unlocked || (!fromKey && !card.visible)) return;
+    if (fromKey && !card.visible) this.keptFirst = this.firstShowing(this.cards.indexOf(card));
+    this.scene.start('game', {
+      mapId: card.mapId,
+      difficulty: this.difficulty,
+      mode: this.mode,
+    });
   }
 
   // --- heroes --------------------------------------------------------------

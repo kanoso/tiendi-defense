@@ -34,7 +34,7 @@ export function playerLevel(
   const map = findMap(mapId);
   const atDifficulty = applyDifficulty(map.level, difficulty);
   const withRanks = applyHeroRanks(atDifficulty, heroRanks);
-  return mode === 'endless' ? asEndless(withRanks, map.endlessExtras) : withRanks;
+  return mode === 'endless' ? asEndless(withRanks, map.endlessExtras, map.endlessHpGrowth) : withRanks;
 }
 
 /** A save of the game as it is now. A copy: the game going on does not change it. */

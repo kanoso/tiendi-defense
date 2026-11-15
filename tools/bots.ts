@@ -46,7 +46,8 @@ export interface Result {
   goldLeft: number;
 }
 
-const MAX_TICKS = 60 * 60 * 30;
+/** Longer than any campaign: the newest maps run close to half an hour. */
+const MAX_TICKS = 60 * 60 * 45;
 
 export function play(level: Level, bot: Bot, seed: number): Result {
   const game = createGame(level, seed);

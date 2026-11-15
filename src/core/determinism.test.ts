@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { describe, expect, it } from 'vitest';
-import { MAPS } from '../data/maps';
+import { findMap, MAPS } from '../data/maps';
 import { length } from './path';
 import { createGame, step, type Command, type GameState, type Level } from './simulation';
 import { hashState } from './stateHash';
@@ -103,6 +103,39 @@ describe('hashState', () => {
     game.heroes[0].lastShot = { tick: 1, x: 2, y: 3 };
     game.heroes[0].lastHeal = null;
     expect(hashState(game)).toBe(before);
+  });
+
+  describe('on the fortress, with two roads, branches and spots to clear', () => {
+    const fortress: Level = { ...findMap('fortress').level, startingGold: 5000 };
+    const firstBlocked = fortress.buildSlots.findIndex((slot) => slot.clearCost !== undefined);
+
+    function playFortress(seed: number): GameState {
+      const game = createGame(fortress, seed);
+      for (let tick = 0; tick < 2400; tick++) {
+        const commands: Command[] = [];
+        if (game.phase === 'preparing') commands.push({ type: 'startWave' });
+        if (tick === 5) {
+          commands.push({ type: 'buildTower', slot: 0, tower: 'archery' });
+          commands.push({ type: 'clearSlot', slot: firstBlocked }, { type: 'buildTower', slot: firstBlocked, tower: 'cannon' });
+        }
+        if (tick === 6 || tick === 7) commands.push({ type: 'upgradeTower', slot: 0 });
+        if (tick === 8) commands.push({ type: 'specializeTower', slot: 0, branch: 'lluvia' });
+        if (tick === 400) commands.push({ type: 'moveHero', heroId: 1, x: 300, y: 200 });
+        step(game, fortress, commands);
+      }
+      return game;
+    }
+
+    it('gives the same hash for the same seed and commands', () => {
+      const first = playFortress(9);
+      expect(first.towers.find((tower) => tower.slot === 0)?.branch).toBe('lluvia');
+      expect(first.clearedSlots).toEqual([firstBlocked]);
+      expect(hashState(playFortress(9))).toBe(hashState(first));
+    });
+
+    it('differs when the luck differs', () => {
+      expect(hashState(playFortress(9))).not.toBe(hashState(playFortress(10)));
+    });
   });
 
   it('survives the state being sent as text and read back', () => {

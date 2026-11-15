@@ -59,6 +59,50 @@ describe('a saved game', () => {
   });
 });
 
+describe('a saved game on the newest maps', () => {
+  for (const mapId of ['swamp', 'fortress']) {
+    for (const mode of ['campaign', 'endless'] as const) {
+      it(`${mapId} ${mode}: reads back as saved, specialized towers and cleared spots included, and plays on the same`, () => {
+        const level = playerLevel(mapId, 'hard', mode, {});
+        const game = createGame(level, 3);
+        game.gold = 5000;
+        const spot = level.buildSlots.findIndex((slot) => slot.clearCost !== undefined);
+        step(game, level, [
+          { type: 'buildTower', slot: 0, tower: 'arcane' },
+          { type: 'clearSlot', slot: spot },
+          { type: 'buildTower', slot: spot, tower: 'archery' },
+        ]);
+        step(game, level, [{ type: 'upgradeTower', slot: 0 }]);
+        step(game, level, [{ type: 'upgradeTower', slot: 0 }]);
+        step(game, level, [{ type: 'specializeTower', slot: 0, branch: 'rayo' }]);
+        step(game, level, [{ type: 'startWave' }]);
+        for (let tick = 0; tick < 60 * 180 && game.phase === 'wave'; tick++) step(game, level);
+        expect(game.phase).toBe('preparing');
+        expect(game.towers.find((tower) => tower.slot === 0)?.branch).toBe('rayo');
+
+        const saved = makeSavedGame({ gameId: `${mapId}-1`, mapId, difficulty: 'hard', mode, state: game });
+        const back = parseSavedGame(roundTrip(saved));
+        expect(back).toEqual(saved);
+        expect(back!.state.clearedSlots).toEqual([spot]);
+
+        const resumed = back!.state;
+        for (const copy of [game, resumed]) {
+          step(copy, level, [{ type: 'startWave' }]);
+          for (let tick = 0; tick < 900; tick++) step(copy, level);
+        }
+        expect(resumed).toEqual(game);
+      });
+    }
+  }
+
+  it('counts the waves of the longer maps on the menu', () => {
+    const level = playerLevel('fortress', 'normal', 'campaign', {});
+    const game = createGame(level, 1);
+    const saved = makeSavedGame({ gameId: 'f', mapId: 'fortress', difficulty: 'normal', mode: 'campaign', state: game });
+    expect(describeSavedGame(saved)).toBe('Fortaleza · Normal · oleada 1/35');
+  });
+});
+
 describe('reading a saved game that may be broken', () => {
   const valid = () => roundTrip(afterFirstWave().saved) as Record<string, any>;
 

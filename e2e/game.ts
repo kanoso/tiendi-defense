@@ -133,7 +133,7 @@ export function giveGold(page: Page, gold: number): Promise<void> {
 
 /**
  * Test setup only: turns tower branches on for the level being played, as the
- * maps that offer them will. None of the current maps does.
+ * newest maps do. The first three do not, and the tests play on the first.
  */
 export function allowBranches(page: Page): Promise<void> {
   return page.evaluate(() => {

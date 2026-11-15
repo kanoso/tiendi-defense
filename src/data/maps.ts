@@ -1,6 +1,7 @@
 import { createPath } from '../core/path';
 import type { Level } from '../core/simulation';
 import type { EndlessGroup } from '../core/waves';
+import { fortressEndless, fortressWaves, swampEndless, swampWaves } from './mapWaves';
 import { GAME_WIDTH, sharedRules, standardWaves } from './rules';
 
 export interface GameMap {
@@ -16,6 +17,11 @@ export interface GameMap {
    * only it sends. Missing for none.
    */
   endlessExtras?: readonly EndlessGroup[];
+  /**
+   * Enemy health growth per wave in endless mode, when it has to be steeper
+   * than the campaign's. Missing to keep the campaign's.
+   */
+  endlessHpGrowth?: number;
 }
 
 // Roads start and end 30 px outside the 960 x 540 map, so enemies walk in and out.
@@ -163,8 +169,110 @@ const crossroads: GameMap = {
   },
 };
 
+/**
+ * One long road in three horizontal runs, so towers between two runs reach both.
+ * The first map with branches, skeletons and shamans.
+ */
+const swamp: GameMap = {
+  id: 'swamp',
+  name: 'Pantano',
+  blurb: 'Un camino largo entre aguas: esqueletos que se levantan y chamanes que curan.',
+  endlessExtras: swampEndless,
+  // Specialized towers outlast the campaign's growth: endless grows steeper here.
+  endlessHpGrowth: 0.085,
+  level: {
+    ...sharedRules,
+    towerBranches: true,
+    // Its long road keeps enemies under fire for longer, so they come tougher.
+    waveHpGrowth: 0.0675,
+    waves: swampWaves,
+    paths: [
+      createPath([
+        { x: OFF_LEFT, y: 110 },
+        { x: 700, y: 110 },
+        { x: 700, y: 270 },
+        { x: 180, y: 270 },
+        { x: 180, y: 430 },
+        { x: OFF_RIGHT, y: 430 },
+      ]),
+    ],
+    heroes: [
+      { type: 'warrior', x: 450, y: 270 },
+      { type: 'archer', x: 470, y: 205 },
+      { type: 'mage', x: 420, y: 330 },
+      { type: 'support', x: 380, y: 300 },
+    ],
+    buildSlots: [
+      { x: 380, y: 190 },
+      { x: 200, y: 190 },
+      { x: 560, y: 190 },
+      { x: 300, y: 350 },
+      { x: 780, y: 200 },
+      { x: 520, y: 350 },
+      { x: 720, y: 350 },
+      { x: 880, y: 340 },
+      // Blocked by rocks until the player pays to clear them.
+      { x: 90, y: 350, clearCost: 150 },
+      { x: 100, y: 190, clearCost: 200 },
+      { x: 620, y: 350, clearCost: 250 },
+      { x: 290, y: 190, clearCost: 300 },
+    ],
+  },
+};
+
+// The fortress's two gates open on the same road across the top, one from each
+// side. Both roads meet at (480, 120) and share the rest of the way.
+const INNER_ROAD = [
+  { x: 480, y: 120 },
+  { x: 480, y: 290 },
+  { x: 240, y: 290 },
+  { x: 240, y: 430 },
+  { x: OFF_RIGHT, y: 430 },
+];
+
+/** Two gates, west and east, whose roads meet before the walls. Every new enemy. */
+const fortress: GameMap = {
+  id: 'fortress',
+  name: 'Fortaleza',
+  blurb: 'Dos puertas, al oeste y al este, que se unen ante la muralla.',
+  endlessExtras: fortressEndless,
+  endlessHpGrowth: 0.0425,
+  level: {
+    ...sharedRules,
+    towerBranches: true,
+    // Two gates to cover from the first wave: enough for a tower at each.
+    startingGold: 160,
+    waves: fortressWaves,
+    paths: [
+      createPath([{ x: OFF_LEFT, y: 120 }, ...INNER_ROAD]),
+      createPath([{ x: OFF_RIGHT, y: 120 }, ...INNER_ROAD]),
+    ],
+    heroes: [
+      { type: 'warrior', x: 480, y: 200 },
+      { type: 'archer', x: 520, y: 255 },
+      { type: 'mage', x: 420, y: 330 },
+      { type: 'support', x: 540, y: 300 },
+    ],
+    buildSlots: [
+      { x: 400, y: 205 },
+      { x: 160, y: 200 },
+      { x: 800, y: 200 },
+      { x: 560, y: 205 },
+      { x: 620, y: 340 },
+      { x: 330, y: 360 },
+      { x: 800, y: 340 },
+      { x: 150, y: 350 },
+      // Blocked by rocks until the player pays to clear them.
+      { x: 280, y: 205, clearCost: 150 },
+      { x: 680, y: 270, clearCost: 200 },
+      { x: 480, y: 360, clearCost: 250 },
+      { x: 890, y: 210, clearCost: 300 },
+    ],
+  },
+};
+
 /** In the order they are played: winning one opens the next. */
-export const MAPS: readonly GameMap[] = [meadow, canyon, crossroads];
+export const MAPS: readonly GameMap[] = [meadow, canyon, crossroads, swamp, fortress];
 
 export const MAP_IDS: readonly string[] = MAPS.map((map) => map.id);
 

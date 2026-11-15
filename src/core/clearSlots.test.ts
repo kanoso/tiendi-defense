@@ -148,11 +148,15 @@ describe('the blocked spots of every map', () => {
       expect(costs[3]).toBeLessThanOrEqual(350);
     });
 
-    it(`${map.name}: every spot to clear is on open ground, inside the map and clear of the interface`, () => {
+    // The maps made with the spots in mind hold every slot to the same rules.
+    const placed = map.level.towerBranches === true ? slots : blocked;
+    const which = placed === slots ? 'every slot' : 'every spot to clear';
+
+    it(`${map.name}: ${which} is on open ground, inside the map and clear of the interface`, () => {
       const road = map.level.paths.flatMap((path) =>
         Array.from({ length: Math.ceil(path.length / 4) + 1 }, (_, i) => pointAt(path, i * 4)),
       );
-      for (const spot of blocked) {
+      for (const spot of placed) {
         const near = (point: { x: number; y: number }) => Math.hypot(point.x - spot.x, point.y - spot.y);
         const where = `${spot.x},${spot.y}`;
         expect(Math.min(...road.map(near)), `road at ${where}`).toBeGreaterThanOrEqual(ROAD_CLEARANCE);
@@ -165,6 +169,10 @@ describe('the blocked spots of every map', () => {
       }
     });
   }
+
+  it('include the two maps built around them', () => {
+    expect(MAPS.filter((map) => map.level.towerBranches === true).map((map) => map.id)).toEqual(['swamp', 'fortress']);
+  });
 });
 
 describe('determinism with cleared spots', () => {

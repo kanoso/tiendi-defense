@@ -52,12 +52,14 @@ async function giveProgress(page: Page, stars: Record<string, number>): Promise<
 }
 
 test.describe('map picker', () => {
-  test('a new player sees three maps with only the first one open', async ({ page }) => {
+  test('a new player sees five maps with only the first one open', async ({ page }) => {
     await openMenu(page);
     expect(await cards(page)).toMatchObject([
       { mapId: 'meadow', unlocked: true, stars: 0 },
       { mapId: 'canyon', unlocked: false, stars: 0 },
       { mapId: 'crossroads', unlocked: false, stars: 0 },
+      { mapId: 'swamp', unlocked: false },
+      { mapId: 'fortress', unlocked: false },
     ]);
   });
 
@@ -84,6 +86,8 @@ test.describe('map picker', () => {
       { mapId: 'meadow', unlocked: true, stars: 2 },
       { mapId: 'canyon', unlocked: true, stars: 0 },
       { mapId: 'crossroads', unlocked: false, stars: 0 },
+      { mapId: 'swamp', unlocked: false },
+      { mapId: 'fortress', unlocked: false },
     ]);
   });
 
@@ -323,6 +327,8 @@ test.describe('playing a map', () => {
     ['meadow', 1],
     ['canyon', 1],
     ['crossroads', 2],
+    ['swamp', 1],
+    ['fortress', 2],
   ] as const) {
     test(`${mapId} loads and its first wave brings enemies`, async ({ page }) => {
       await page.goto(`/?map=${mapId}`);
@@ -351,7 +357,28 @@ test.describe('playing a map', () => {
         { mapId: 'meadow', unlocked: true, stars: 3 },
         { mapId: 'canyon', unlocked: true },
         { mapId: 'crossroads', unlocked: false },
+        { mapId: 'swamp', unlocked: false },
+        { mapId: 'fortress', unlocked: false },
       ]);
+  });
+
+  test('winning the third map opens the fourth', async ({ page }) => {
+    await giveProgress(page, { meadow: 3, canyon: 3 });
+    await page.goto('/?map=crossroads');
+    await waitForGame(page);
+    await page.evaluate(() => {
+      (window as any).__game.scene.getScene('game').game_.phase = 'won';
+    });
+    await expect.poll(async () => (await snapshot(page)).endTitle).toContain('★★★');
+
+    await page.keyboard.press('Enter');
+    await expect.poll(() => isShowing(page, 'menu')).toBe(true);
+    await expect
+      .poll(async () => (await cards(page)).map((card) => card.unlocked))
+      .toEqual([true, true, true, true, false]);
+    await page.keyboard.press('4');
+    await waitForGame(page);
+    expect((await currentMap(page)).id).toBe('swamp');
   });
 
   test('a worse result does not replace a better one', async ({ page }) => {

@@ -37,6 +37,12 @@ describe('asEndless', () => {
     expect(game.towers).toMatchObject([{ slot: spot }]);
   });
 
+  it("keeps the map's health growth, unless it is given a steeper one for endless play", () => {
+    expect(asEndless(level).waveHpGrowth).toBe(level.waveHpGrowth);
+    expect(asEndless(level, [], 0.09).waveHpGrowth).toBe(0.09);
+    expect(asEndless(level, [], 0.09).endless).toBe(endlessRules);
+  });
+
   it('does not change the level it was given', () => {
     asEndless(level);
     expect(level.endless).toBeNull();

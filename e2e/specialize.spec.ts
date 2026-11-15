@@ -14,8 +14,8 @@ import {
 } from './game';
 
 // Towers at their third level choose one of two branches from their menu, on
-// the maps that offer them. None of the current maps does, so these tests turn
-// branches on for Pradera; without that, a third level tower is done.
+// the maps that offer them: Pantano and Fortaleza. These tests turn branches on
+// for Pradera, which has none; without that, a third level tower is done.
 
 const SLOT = 1;
 /** Waiting on a busy build machine: game ticks can come slowly. */

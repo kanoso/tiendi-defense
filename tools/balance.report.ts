@@ -67,24 +67,28 @@ it('prints how far each scripted player gets on each map', () => {
     lines.push('', `=== ${map.name} · ${map.level.waves.length} waves · seeds ${SEEDS.join(', ')}`);
     for (const bot of BOTS) lines.push(...report(map.level, bot));
   }
-  // Difficulties and permanent hero ranks, measured on the first map with the
-  // strongest scripted player.
+  // Difficulties and permanent hero ranks, measured with the strongest scripted
+  // player on the first map and on the maps with branches, which are built
+  // around the newer enemies and balanced on their own.
   const best = BOTS[BOTS.length - 1];
   const maxRanks = Object.fromEntries(
     Object.keys(MAPS[0].level.heroTypes).map((type) => [type, MAX_HERO_RANK]),
   );
-  for (const difficulty of DIFFICULTIES) {
-    const level = applyDifficulty(MAPS[0].level, difficulty.id);
-    lines.push('', `=== ${MAPS[0].name} · ${difficulty.name} · ${onLevel(level, best).name}`);
-    lines.push(...report(level, { ...best, name: 'heroes without ranks' }));
-    lines.push(...report(applyHeroRanks(level, maxRanks), { ...best, name: 'heroes at top rank' }));
+  const measured = [MAPS[0], ...MAPS.filter((map) => map.level.towerBranches === true)];
+  for (const map of measured) {
+    for (const difficulty of DIFFICULTIES) {
+      const level = applyDifficulty(map.level, difficulty.id);
+      lines.push('', `=== ${map.name} · ${difficulty.name} · ${onLevel(level, best).name}`);
+      lines.push(...report(level, { ...best, name: 'heroes without ranks' }));
+      lines.push(...report(applyHeroRanks(level, maxRanks), { ...best, name: 'heroes at top rank' }));
+    }
   }
   // Endless mode has no victory: what matters is how long the best player lasts.
   for (const map of MAPS) {
     lines.push('', `=== ${map.name} · endless · ${onLevel(map.level, best).name}`);
     for (const [label, level] of [
-      ['heroes without ranks', asEndless(map.level, map.endlessExtras)],
-      ['heroes at top rank', asEndless(applyHeroRanks(map.level, maxRanks), map.endlessExtras)],
+      ['heroes without ranks', asEndless(map.level, map.endlessExtras, map.endlessHpGrowth)],
+      ['heroes at top rank', asEndless(applyHeroRanks(map.level, maxRanks), map.endlessExtras, map.endlessHpGrowth)],
     ] as const) {
       const runs = SEEDS.map((seed) => play(level, best, seed));
       lines.push(

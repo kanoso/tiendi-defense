@@ -361,13 +361,22 @@ describe('a map without branches', () => {
     expect(play(sent)).toBe(play(TO_THIRD));
   });
 
-  it('is how the three current maps are played, at any difficulty, in any mode', () => {
-    for (const map of MAPS) {
+  it('is how the first three maps are played, at any difficulty, in any mode', () => {
+    for (const map of MAPS.slice(0, 3)) {
       expect(map.level.towerBranches ?? false, map.id).toBe(false);
       for (const mode of ['campaign', 'endless'] as const) {
         expect(playerLevel(map.id, 'hard', mode, {}).towerBranches ?? false, `${map.id} ${mode}`).toBe(false);
       }
       expect(coopLevel(map.id, 'normal', 2).towerBranches ?? false, map.id).toBe(false);
+    }
+  });
+
+  it('is not how the two newest maps are played: they offer branches at any difficulty, in any mode', () => {
+    for (const id of ['swamp', 'fortress']) {
+      for (const mode of ['campaign', 'endless'] as const) {
+        expect(playerLevel(id, 'hard', mode, {}).towerBranches, `${id} ${mode}`).toBe(true);
+      }
+      expect(coopLevel(id, 'normal', 2).towerBranches, id).toBe(true);
     }
   });
 

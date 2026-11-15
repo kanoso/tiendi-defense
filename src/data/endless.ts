@@ -74,9 +74,14 @@ export const endlessRules: EndlessRules = {
 /**
  * The same map played without an end. The level passed in is left untouched.
  * `extra` are the map's own groups, if any: they come after the shared ones, so
- * the shared ones keep the roads they take.
+ * the shared ones keep the roads they take. `waveHpGrowth` replaces the map's
+ * health growth per wave, for maps whose endless mode has to grow steeper.
  */
-export function asEndless(level: Level, extra: readonly EndlessGroup[] = []): Level {
+export function asEndless(
+  level: Level,
+  extra: readonly EndlessGroup[] = [],
+  waveHpGrowth: number = level.waveHpGrowth,
+): Level {
   const endless = extra.length === 0 ? endlessRules : { groups: [...endlessRules.groups, ...extra] };
-  return { ...level, waves: [], endless };
+  return { ...level, waves: [], endless, waveHpGrowth };
 }
